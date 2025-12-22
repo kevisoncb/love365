@@ -4,19 +4,38 @@ import fs from "fs/promises";
 
 export const runtime = "nodejs";
 
-export async function GET(_: Request, ctx: { params: { token: string } }) {
-  const token = ctx.params.token;
+export async function GET(request: Request) {
+  // Extrai o token diretamente da URL
+  const url = new URL(request.url);
+  const token = url.pathname.split("/").pop();
+
+  if (!token) {
+    return NextResponse.json(
+      { error: "Token inválido." },
+      { status: 400 }
+    );
+  }
+
+  const filePath = path.join(process.cwd(), "data", `page-${token}.json`);
 
   try {
-    const file = path.join(process.cwd(), "data", `page-${token}.json`);
-    const raw = await fs.readFile(file, "utf-8");
+    const raw = await fs.readFile(filePath, "utf-8");
     const page = JSON.parse(raw);
 
-    // não expor dados de contato publicamente
     delete page.contact;
 
     return NextResponse.json(page, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Página não encontrada." }, { status: 404 });
+  } catch (e: any) {
+    return NextResponse.json(
+      {
+        error: "Página não encontrada.",
+        debug: {
+          token,
+          attemptedPath: filePath,
+          code: e?.code ?? null,
+        },
+      },
+      { status: 404 }
+    );
   }
 }

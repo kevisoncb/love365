@@ -24,3 +24,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+:root {
+  --bg: #0B0B10;
+  --surface: #12121A;
+  --text: #FFFFFF;
+  --muted: rgba(255,255,255,0.70);
+  --border: rgba(255,255,255,0.10);
+
+  --accent: #FF2F92;
+  --glow: rgba(255, 47, 146, 0.35);
+  --glow2: rgba(139, 92, 246, 0.25);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* utilitários simples */
+.love-surface {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+}
+
+.love-muted { color: var(--muted); }
+
+.premium-glow {
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 10px 35px rgba(0,0,0,0.45),
+    0 0 40px var(--glow),
+    0 0 70px var(--glow2);
+}
+
+.premium-border {
+  border: 1px solid rgba(255, 47, 146, 0.22);
+}
+
