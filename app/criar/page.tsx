@@ -40,7 +40,7 @@ export default function CreatePage() {
   const [plan, setPlan] = useState<Plan>("BASIC");
   const [names, setNames] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [yt, setYt] = useState(""); // Campo do YouTube restaurado
+  const [yt, setYt] = useState(""); 
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
@@ -75,21 +75,47 @@ export default function CreatePage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+
     try {
-      await new Promise(r => setTimeout(r, 1500));
-      setShowPending(true);
+      const formData = new FormData();
+      formData.append("plan", plan);
+      formData.append("names", names);
+      formData.append("startDate", startDate);
+      formData.append("yt", yt);
+      formData.append("whatsapp", whatsapp);
+      formData.append("email", email);
+      photos.forEach((file) => formData.append("photos", file));
+
+      const response = await fetch("/api/create-page", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error || "Erro ao criar");
+
+      // Abre o link real gerado em nova aba
+      window.open(result.publicUrl, '_blank');
+      setShowPending(true); 
+    } catch (err: any) {
+      alert(err.message);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ESTILIZAÇÃO: FUNDO PÉROLA (FDFCFB) E DETALHES VERMELHOS
+  // Botão de Preview Rápido (Opcional para teste sem salvar)
+  const openPreview = () => {
+    const params = new URLSearchParams({ names, date: startDate, yt, plan, preview: "true" });
+    window.open(`/p/preview?${params.toString()}`, '_blank');
+  };
+
   const redInput = "w-full rounded-2xl bg-white border border-gray-200 px-4 py-3 text-sm text-gray-800 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder:text-gray-400 shadow-sm";
   const whiteCard = "rounded-3xl border border-gray-200 bg-white/80 p-5 shadow-sm backdrop-blur-sm";
 
   return (
     <main className="min-h-screen bg-[#FDFCFB] text-gray-900 font-sans">
-      {/* Modal Sucesso */}
       {showPending && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-2xl border border-gray-100">
@@ -103,8 +129,6 @@ export default function CreatePage() {
 
       <div className="mx-auto max-w-6xl px-4 py-10 lg:py-20">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:items-start">
-          
-          {/* COLUNA ESQUERDA: FORMULÁRIO */}
           <div className="flex flex-col gap-8">
             <header>
               <h1 className="text-4xl font-black tracking-tight text-red-600">Love365</h1>
@@ -112,7 +136,6 @@ export default function CreatePage() {
             </header>
 
             <form onSubmit={onSubmit} className="space-y-6">
-              {/* Planos */}
               <div className={whiteCard}>
                 <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80">1. Escolha o Plano</label>
                 <div className="mt-4 grid grid-cols-2 gap-3">
@@ -128,14 +151,11 @@ export default function CreatePage() {
                 </div>
               </div>
 
-              {/* Dados */}
               <div className={whiteCard}>
                 <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80 block mb-4">2. Informações</label>
                 <div className="space-y-4">
                   <input className={redInput} value={names} onChange={(e) => setNames(e.target.value)} placeholder="Nomes (Ex: João e Maria)" maxLength={40} required />
                   <input type="date" className={redInput} value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
-                  
-                  {/* Link YouTube - Ativo apenas no Premium ou visível com aviso */}
                   <div className="relative">
                     <input 
                       className={`${redInput} ${plan === 'BASIC' ? 'opacity-50 cursor-not-allowed' : ''}`} 
@@ -151,7 +171,6 @@ export default function CreatePage() {
                 </div>
               </div>
 
-              {/* Fotos */}
               <div className={whiteCard}>
                 <div className="flex justify-between items-center mb-4">
                   <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80">3. Galeria de Fotos</label>
@@ -173,7 +192,6 @@ export default function CreatePage() {
                 </div>
               </div>
 
-              {/* Contato */}
               <div className={whiteCard}>
                 <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80 block mb-4">4. Destinatário</label>
                 <div className="space-y-3">
@@ -188,15 +206,11 @@ export default function CreatePage() {
             </form>
           </div>
 
-          {/* COLUNA DIREITA: LIVE PREVIEW */}
           <div className="sticky top-10 flex flex-col items-center">
-            <div className="relative group">
+            <div className="relative group" onClick={openPreview} title="Clique para abrir preview em tela cheia">
               <div className="absolute -inset-1 bg-red-600 rounded-[3.5rem] blur opacity-10 group-hover:opacity-15 transition duration-1000"></div>
-              
-              {/* Frame do iPhone */}
-              <div className="relative w-[310px] h-[630px] border-[10px] border-gray-900 rounded-[3.2rem] bg-gray-50 shadow-2xl overflow-hidden">
+              <div className="relative w-[310px] h-[630px] border-[10px] border-gray-900 rounded-[3.2rem] bg-gray-50 shadow-2xl overflow-hidden cursor-pointer">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-gray-900 rounded-b-3xl z-50"></div>
-                
                 <div className="relative h-full w-full">
                   {photoPreviews[0] ? (
                     <img src={photoPreviews[0]} className="absolute inset-0 h-full w-full object-cover transition-all duration-700" alt="Preview" />
@@ -206,14 +220,9 @@ export default function CreatePage() {
                        <p className="text-[9px] text-gray-400 uppercase tracking-widest text-center">Seu momento especial aparecerá aqui</p>
                     </div>
                   )}
-                  
                   <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
-
                   <div className="absolute inset-0 flex flex-col items-center justify-between py-16 px-6 z-10 text-center">
-                    <h2 className="text-3xl font-bold text-white drop-shadow-lg italic">
-                      {names || "Nós Dois"}
-                    </h2>
-
+                    <h2 className="text-3xl font-bold text-white drop-shadow-lg italic">{names || "Nós Dois"}</h2>
                     <div className="w-full space-y-2">
                        <p className="text-[9px] text-white/80 font-bold uppercase tracking-[0.3em] mb-3">Contando cada segundo</p>
                        <div className="grid grid-cols-3 gap-2">
@@ -229,13 +238,11 @@ export default function CreatePage() {
                 </div>
               </div>
             </div>
-            
             <p className="mt-6 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
               <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse"></span>
               Visualização ao vivo
             </p>
           </div>
-
         </div>
       </div>
     </main>

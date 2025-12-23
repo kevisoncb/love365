@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 type Plan = "BASIC" | "PREMIUM";
 
@@ -19,20 +19,17 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-// Lógica corrigida para contagem precisa de Anos, Meses e Dias
 function diffParts(from: Date, to: Date) {
   let years = to.getFullYear() - from.getFullYear();
   let months = to.getMonth() - from.getMonth();
   let days = to.getDate() - from.getDate();
 
-  // Ajuste para dias negativos (mês anterior)
   if (days < 0) {
     months--;
     const lastMonth = new Date(to.getFullYear(), to.getMonth(), 0);
     days += lastMonth.getDate();
   }
 
-  // Ajuste para meses negativos (ano anterior)
   if (months < 0) {
     years--;
     months += 12;
@@ -45,8 +42,6 @@ function diffParts(from: Date, to: Date) {
 
   return { years, months, days, hours, mins, secs };
 }
-
-/* ---------------- YouTube helpers ---------------- */
 
 function extractYouTubeId(input: string): string | null {
   const s = (input || "").trim();
@@ -156,37 +151,24 @@ function HeartsOverlayInHero({ enabled }: { enabled: boolean }) {
 
 /* ---------------- Timer Tile ---------------- */
 
-function TimerTile({
-  label,
-  value,
-  premium,
-}: {
-  label: string;
-  value: number | string;
-  premium: boolean;
-}) {
+function TimerTile({ label, value, premium }: { label: string; value: number | string; premium: boolean }) {
   return (
-    <div
-      className={[
-        "rounded-2xl px-3 py-3 text-center backdrop-blur-md",
-        "border",
-        premium
-          ? "border-rose-300/25 bg-white/12 shadow-[0_0_30px_rgba(244,63,94,0.10)]"
-          : "border-white/10 bg-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.45)]",
-      ].join(" ")}
-    >
+    <div className={[
+        "rounded-2xl px-3 py-3 text-center backdrop-blur-md border",
+        premium ? "border-rose-300/25 bg-white/12 shadow-[0_0_30px_rgba(244,63,94,0.10)]" : "border-white/10 bg-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.45)]",
+      ].join(" ")}>
       <div className="text-[10px] text-white/65 tracking-[0.25em] uppercase">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums text-white">{value}</div>
     </div>
   );
 }
 
-/* ---------------- Page ---------------- */
+/* ---------------- Main Page ---------------- */
 
 export default function PublicCouplePage() {
   const params = useParams();
-  const tokenRaw = (params as any)?.token;
-  const token = (Array.isArray(tokenRaw) ? tokenRaw[0] : tokenRaw) as string | undefined;
+  const searchParams = useSearchParams();
+  const token = (Array.isArray(params?.token) ? params.token[0] : params?.token) as string | undefined;
 
   const [data, setData] = useState<PageDTO | null>(null);
   const [loading, setLoading] = useState(true);
@@ -198,11 +180,27 @@ export default function PublicCouplePage() {
   const [musicStarted, setMusicStarted] = useState(false);
 
   useEffect(() => {
+    // Modo Preview (lê da URL)
+    if (token?.startsWith("preview") || searchParams.get("preview") === "true") {
+      setData({
+        token: "preview",
+        plan: (searchParams.get("plan") as Plan) || "BASIC",
+        names: searchParams.get("names") || "Exemplo Casal",
+        startDate: searchParams.get("date") || "2024-01-01",
+        photos: [], // No preview não carregamos as fotos do File
+        yt: searchParams.get("yt")
+      });
+      setLoading(false);
+      return;
+    }
+
+    // Modo Real (lê da API)
     if (!token) {
       setLoading(false);
       setApiError("Token ausente.");
       return;
     }
+
     let alive = true;
     (async () => {
       try {
@@ -222,7 +220,7 @@ export default function PublicCouplePage() {
       }
     })();
     return () => { alive = false; };
-  }, [token]);
+  }, [token, searchParams]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -270,17 +268,17 @@ export default function PublicCouplePage() {
     setMusicStarted(true);
   }
 
-  if (loading) return <main className="min-h-[100svh] flex items-center justify-center bg-[#0B0B10] text-white">Carregando…</main>;
-  if (!data) return <main className="min-h-[100svh] flex items-center justify-center bg-[#0B0B10] text-white"><div className="text-center"><h1>Página não encontrada</h1><p>{apiError}</p></div></main>;
+  if (loading) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-red-600">Carregando momento especial...</main>;
+  if (!data) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-gray-800"><div className="text-center"><h1>Página não encontrada</h1><p>{apiError}</p></div></main>;
 
   const currentPhoto = total > 0 ? photos[index] : null;
   const ytId = premium && data.yt ? extractYouTubeId(data.yt) : null;
 
   return (
-    <main className="bg-[#0B0B10] text-white min-h-[100svh]">
+    <main className="bg-[#FDFCFB] min-h-[100svh] text-gray-900">
       <div className="min-h-[100svh] sm:flex sm:items-center sm:justify-center sm:px-6 sm:py-10">
         <div className="w-full sm:w-auto">
-          <div className="relative sm:rounded-[36px] sm:border sm:border-white/10 sm:bg-white/5 sm:shadow-[0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden">
+          <div className="relative sm:rounded-[36px] sm:border sm:border-gray-200 sm:bg-white sm:shadow-2xl overflow-hidden">
             <section className="relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onClick={tryStartMusic}>
               {ytId && (
                 <iframe
@@ -291,37 +289,35 @@ export default function PublicCouplePage() {
                 />
               )}
 
-              <div className="relative h-[100svh] sm:aspect-[9/16] sm:h-[720px] overflow-hidden">
+              <div className="relative h-[100svh] sm:aspect-[9/16] sm:h-[720px] overflow-hidden bg-gray-100">
                 {currentPhoto ? (
                   <img src={currentPhoto} alt="Foto" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/5">Sem fotos</div>
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-50 text-gray-300">Aguardando Fotos...</div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/20 to-black/75 z-[1]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/70 z-[1]" />
                 <HeartsOverlayInHero enabled={premium} />
 
                 {total > 1 && (
                   <>
-                    <button onClick={(e) => { e.stopPropagation(); prev(); }} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 z-20">‹</button>
-                    <button onClick={(e) => { e.stopPropagation(); next(); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 z-20">›</button>
+                    <button onClick={(e) => { e.stopPropagation(); prev(); }} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/20 text-white z-20">‹</button>
+                    <button onClick={(e) => { e.stopPropagation(); next(); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/20 text-white z-20">›</button>
                   </>
                 )}
 
                 <div className="absolute inset-x-0 top-0 pt-14 sm:pt-10 px-6 z-20 text-center">
-                  <h1 className="text-4xl sm:text-5xl font-semibold drop-shadow-lg">{data.names}</h1>
+                  <h1 className="text-4xl sm:text-5xl font-bold text-white drop-shadow-md italic">{data.names}</h1>
                 </div>
 
-                <div className="absolute inset-x-0 bottom-0 pb-9 sm:pb-8 px-6 z-20">
+                <div className="absolute inset-x-0 bottom-0 pb-12 sm:pb-8 px-6 z-20">
                   <div className="mx-auto max-w-md">
                     <div className="grid grid-cols-3 gap-2.5">
-                      {/* CONTADOR CORRIGIDO AQUI */}
                       <TimerTile label="ANOS" value={time.years} premium={premium} />
                       <TimerTile label="MESES" value={time.months} premium={premium} />
                       <TimerTile label="DIAS" value={time.days} premium={premium} />
-                      
                       <TimerTile label="HORAS" value={pad2(time.hours)} premium={premium} />
-                      <TimerTile label="MINUTOS" value={pad2(time.mins)} premium={premium} />
-                      <TimerTile label="SEGUNDOS" value={pad2(time.secs)} premium={premium} />
+                      <TimerTile label="MIN" value={pad2(time.mins)} premium={premium} />
+                      <TimerTile label="SEG" value={pad2(time.secs)} premium={premium} />
                     </div>
                   </div>
                 </div>
