@@ -11,7 +11,7 @@ type PageDTO = {
   names: string;
   startDate: string;
   photos: string[];
-  yt?: string | null; // id ou link do youtube
+  yt?: string | null; // pode vir como URL do YouTube ou só o ID
   createdAt?: string;
 };
 
@@ -30,118 +30,40 @@ function diffParts(from: Date, to: Date) {
 
 /* ---------------- YouTube helpers ---------------- */
 
-function extractYouTubeId(input?: string | null): string | null {
-  if (!input) return null;
-  const s = input.trim();
+function extractYouTubeId(input: string): string | null {
+  const s = (input || "").trim();
+  if (!s) return null;
 
-  // Se já parece um ID (11 chars típicos)
-  if (/^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
+  // se já parece um id (11 chars) e não tem URL
+  if (!s.includes("http") && /^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
 
-  // Tenta pegar v=... ou youtu.be/...
   try {
     const url = new URL(s);
     // youtu.be/<id>
     if (url.hostname.includes("youtu.be")) {
-      const id = url.pathname.split("/").filter(Boolean)[0];
-      if (id && /^[a-zA-Z0-9_-]{11}$/.test(id)) return id;
+      const id = url.pathname.replace("/", "").trim();
+      return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
     }
+
     // youtube.com/watch?v=<id>
     const v = url.searchParams.get("v");
     if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
 
-    // youtube.com/embed/<id>
+    // youtube.com/shorts/<id>  ou /embed/<id>
     const parts = url.pathname.split("/").filter(Boolean);
-    const embedIdx = parts.indexOf("embed");
-    if (embedIdx >= 0 && parts[embedIdx + 1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[embedIdx + 1])) {
-      return parts[embedIdx + 1];
+    const maybe = parts[1] ? parts[1] : parts[0];
+    // caminhos comuns: shorts/<id>, embed/<id>
+    const idx = parts.findIndex((p) => p === "shorts" || p === "embed");
+    if (idx >= 0 && parts[idx + 1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[idx + 1])) {
+      return parts[idx + 1];
     }
+
+    if (maybe && /^[a-zA-Z0-9_-]{11}$/.test(maybe)) return maybe;
+
+    return null;
   } catch {
-    // não é URL válida, cai fora
+    return null;
   }
-  return null;
-}
-
-/**
- * Player invisível: carrega o vídeo mutado e em loop.
- * Quando o usuário tocar/clique na página, tentamos unmute + play via postMessage.
- */
-function YouTubeBackgroundAudio({
-  enabled,
-  youtubeId,
-}: {
-  enabled: boolean;
-  youtubeId: string | null;
-}) {
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [needsTap, setNeedsTap] = useState(false);
-
-  useEffect(() => {
-    if (!enabled || !youtubeId) return;
-
-    // Mostra o aviso: precisa de 1 interação para sair do mute
-    setNeedsTap(true);
-
-    const tryEnableSound = () => {
-      const iframe = iframeRef.current;
-      if (!iframe || !iframe.contentWindow) return;
-
-      // Tenta comandar o player do YouTube (enablejsapi=1)
-      // 1) unmute 2) set volume 3) play
-      const cmds = [
-        { event: "command", func: "unMute", args: [] },
-        { event: "command", func: "setVolume", args: [70] },
-        { event: "command", func: "playVideo", args: [] },
-      ];
-
-      for (const c of cmds) {
-        iframe.contentWindow.postMessage(JSON.stringify({ ...c }), "*");
-      }
-
-      // Esconde o aviso após a interação
-      setNeedsTap(false);
-
-      // Remove listeners (1 toque só)
-      window.removeEventListener("pointerdown", tryEnableSound);
-      window.removeEventListener("touchstart", tryEnableSound);
-      window.removeEventListener("click", tryEnableSound);
-    };
-
-    // “Primeira interação” em qualquer lugar da página
-    window.addEventListener("pointerdown", tryEnableSound, { once: true });
-    window.addEventListener("touchstart", tryEnableSound, { once: true });
-    window.addEventListener("click", tryEnableSound, { once: true });
-
-    return () => {
-      window.removeEventListener("pointerdown", tryEnableSound);
-      window.removeEventListener("touchstart", tryEnableSound);
-      window.removeEventListener("click", tryEnableSound);
-    };
-  }, [enabled, youtubeId]);
-
-  if (!enabled || !youtubeId) return null;
-
-  // Autoplay mutado + loop
-  const src = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&loop=1&playlist=${youtubeId}&controls=0&playsinline=1&rel=0&modestbranding=1&enablejsapi=1`;
-
-  return (
-    <>
-      {/* iframe invisível (só áudio) */}
-      <iframe
-        ref={iframeRef}
-        title="Love365 Music"
-        src={src}
-        className="fixed -left-[9999px] -top-[9999px] w-[1px] h-[1px] opacity-0 pointer-events-none"
-        allow="autoplay; encrypted-media"
-      />
-
-      {/* aviso minimalista (some depois do 1º toque) */}
-      {needsTap && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full border border-white/10 bg-black/55 text-xs text-white/80 backdrop-blur-md">
-          Toque na tela para ativar a música
-        </div>
-      )}
-    </>
-  );
 }
 
 /* ---------------- Hearts Overlay (scoped to hero) ---------------- */
@@ -237,7 +159,7 @@ function HeartsOverlayInHero({ enabled }: { enabled: boolean }) {
   );
 }
 
-/* ---------------- Timer Tile (refined) ---------------- */
+/* ---------------- Timer Tile ---------------- */
 
 function TimerTile({
   label,
@@ -280,6 +202,10 @@ export default function PublicCouplePage() {
   // carrossel
   const [index, setIndex] = useState(0);
   const touchStartX = useRef<number | null>(null);
+
+  // música (YouTube)
+  const ytIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [musicStarted, setMusicStarted] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -328,8 +254,6 @@ export default function PublicCouplePage() {
   const photos = data?.photos ?? [];
   const total = photos.length;
 
-  const ytId = useMemo(() => extractYouTubeId(data?.yt ?? null), [data?.yt]);
-
   const startDate = useMemo(() => {
     const s = data?.startDate || "";
     const d = new Date(s ? s + "T00:00:00" : Date.now());
@@ -359,6 +283,28 @@ export default function PublicCouplePage() {
     touchStartX.current = null;
   }
 
+  function tryStartMusic() {
+    if (!premium) return;
+    const id = data?.yt ? extractYouTubeId(data.yt) : null;
+    if (!id) return;
+    if (musicStarted) return;
+
+    const iframe = ytIframeRef.current;
+    if (!iframe || !iframe.contentWindow) return;
+
+    // Comandos da Iframe API via postMessage
+    iframe.contentWindow.postMessage(
+      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+      "*"
+    );
+    iframe.contentWindow.postMessage(
+      JSON.stringify({ event: "command", func: "unMute", args: [] }),
+      "*"
+    );
+
+    setMusicStarted(true);
+  }
+
   if (loading) {
     return (
       <main className="min-h-[100svh] flex items-center justify-center bg-[#0B0B10] text-white">
@@ -379,80 +325,98 @@ export default function PublicCouplePage() {
   }
 
   const currentPhoto = total > 0 ? photos[index] : null;
+  const ytId = premium && data.yt ? extractYouTubeId(data.yt) : null;
 
   return (
     <main className="bg-[#0B0B10] text-white min-h-[100svh]">
-      {/* Música: SOMENTE Premium e somente se tiver ID/link válido */}
-      <YouTubeBackgroundAudio enabled={premium && !!ytId} youtubeId={ytId} />
-
-      <div className="mx-auto w-full max-w-xl sm:px-4 sm:py-10">
-        <div className="relative sm:rounded-[36px] sm:border sm:border-white/10 sm:bg-white/5 sm:shadow-[0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden">
-          <section className="relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-            <div className="relative h-[100svh] sm:h-[560px] overflow-hidden">
-              {currentPhoto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={currentPhoto}
-                  alt="Foto do casal"
-                  className="absolute inset-0 h-full w-full object-cover"
-                  draggable={false}
+      {/* Centraliza no desktop, mantém full no mobile */}
+      <div className="min-h-[100svh] sm:flex sm:items-center sm:justify-center sm:px-6 sm:py-10">
+        <div className="w-full sm:w-auto">
+          <div className="relative sm:rounded-[36px] sm:border sm:border-white/10 sm:bg-white/5 sm:shadow-[0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden">
+            <section
+              className="relative"
+              onTouchStart={onTouchStart}
+              onTouchEnd={onTouchEnd}
+              onClick={tryStartMusic}
+            >
+              {/* iframe invisível do YouTube (somente Premium e somente se tiver yt) */}
+              {ytId && (
+                <iframe
+                  ref={ytIframeRef}
+                  className="absolute -left-[9999px] -top-[9999px] w-[1px] h-[1px] opacity-0 pointer-events-none"
+                  src={`https://www.youtube.com/embed/${ytId}?enablejsapi=1&autoplay=0&controls=0&rel=0&playsinline=1&loop=1&playlist=${ytId}&mute=0`}
+                  title="Love365 Music"
+                  allow="autoplay; encrypted-media"
                 />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-white/70 bg-white/5">
-                  Sem fotos
-                </div>
               )}
 
-              <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/20 to-black/75 z-[1]" />
-
-              <HeartsOverlayInHero enabled={premium} />
-
-              {total > 1 && (
-                <>
-                  <button
-                    onClick={prev}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10 z-20"
-                    aria-label="Anterior"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    onClick={next}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10 z-20"
-                    aria-label="Próxima"
-                  >
-                    ›
-                  </button>
-                </>
-              )}
-
-              <div className="absolute inset-x-0 top-0 pt-14 sm:pt-12 px-6 z-20 text-center">
-                <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight drop-shadow-[0_10px_30px_rgba(0,0,0,0.55)]">
-                  {data.names}
-                </h1>
-              </div>
-
-              <div className="absolute inset-x-0 bottom-0 pb-9 sm:pb-10 px-6 z-20">
-                <div className="mx-auto max-w-md">
-                  <div className="grid grid-cols-3 gap-2.5">
-                    <TimerTile label="ANOS" value={Math.floor(time.days / 365)} premium={premium} />
-                    <TimerTile label="MESES" value={Math.floor((time.days % 365) / 30)} premium={premium} />
-                    <TimerTile label="DIAS" value={time.days} premium={premium} />
-
-                    <TimerTile label="HORAS" value={pad2(time.hours)} premium={premium} />
-                    <TimerTile label="MINUTOS" value={pad2(time.mins)} premium={premium} />
-                    <TimerTile label="SEGUNDOS" value={pad2(time.secs)} premium={premium} />
+              {/* MOBILE: 100svh  |  WEB: frame 9:16 (não quadrado) */}
+              <div className="relative h-[100svh] sm:aspect-[9/16] sm:h-[720px] overflow-hidden">
+                {currentPhoto ? (
+                  <img
+                    src={currentPhoto}
+                    alt="Foto do casal"
+                    className="absolute inset-0 h-full w-full object-cover object-center"
+                    draggable={false}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-white/70 bg-white/5">
+                    Sem fotos
                   </div>
+                )}
 
-                  {total > 1 && (
-                    <div className="mt-3 text-center text-xs text-white/60">
-                      {index + 1}/{total}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/20 to-black/75 z-[1]" />
+
+                <HeartsOverlayInHero enabled={premium} />
+
+                {total > 1 && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        prev();
+                      }}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10 z-20"
+                      aria-label="Anterior"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        next();
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10 z-20"
+                      aria-label="Próxima"
+                    >
+                      ›
+                    </button>
+                  </>
+                )}
+
+                <div className="absolute inset-x-0 top-0 pt-14 sm:pt-10 px-6 z-20 text-center">
+                  <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight drop-shadow-[0_10px_30px_rgba(0,0,0,0.55)]">
+                    {data.names}
+                  </h1>
+                </div>
+
+                <div className="absolute inset-x-0 bottom-0 pb-9 sm:pb-8 px-6 z-20">
+                  <div className="mx-auto max-w-md">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <TimerTile label="ANOS" value={Math.floor(time.days / 365)} premium={premium} />
+                      <TimerTile label="MESES" value={Math.floor((time.days % 365) / 30)} premium={premium} />
+                      <TimerTile label="DIAS" value={time.days} premium={premium} />
+
+                      <TimerTile label="HORAS" value={pad2(time.hours)} premium={premium} />
+                      <TimerTile label="MINUTOS" value={pad2(time.mins)} premium={premium} />
+                      <TimerTile label="SEGUNDOS" value={pad2(time.secs)} premium={premium} />
                     </div>
-                  )}
+                    {/* contador 1/3 removido */}
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
         </div>
       </div>
     </main>
