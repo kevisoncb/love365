@@ -39,6 +39,7 @@ function extractYouTubeId(input: string): string | null {
 
   try {
     const url = new URL(s);
+
     // youtu.be/<id>
     if (url.hostname.includes("youtu.be")) {
       const id = url.pathname.replace("/", "").trim();
@@ -51,14 +52,10 @@ function extractYouTubeId(input: string): string | null {
 
     // youtube.com/shorts/<id>  ou /embed/<id>
     const parts = url.pathname.split("/").filter(Boolean);
-    const maybe = parts[1] ? parts[1] : parts[0];
-    // caminhos comuns: shorts/<id>, embed/<id>
     const idx = parts.findIndex((p) => p === "shorts" || p === "embed");
     if (idx >= 0 && parts[idx + 1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[idx + 1])) {
       return parts[idx + 1];
     }
-
-    if (maybe && /^[a-zA-Z0-9_-]{11}$/.test(maybe)) return maybe;
 
     return null;
   } catch {
@@ -292,15 +289,13 @@ export default function PublicCouplePage() {
     const iframe = ytIframeRef.current;
     if (!iframe || !iframe.contentWindow) return;
 
-    // Comandos da Iframe API via postMessage
-    iframe.contentWindow.postMessage(
-      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-      "*"
-    );
-    iframe.contentWindow.postMessage(
-      JSON.stringify({ event: "command", func: "unMute", args: [] }),
-      "*"
-    );
+    // comandos mais robustos (alguns browsers são chatos)
+    const post = (msg: any) => iframe.contentWindow!.postMessage(JSON.stringify(msg), "*");
+
+    post({ event: "command", func: "setVolume", args: [100] });
+    post({ event: "command", func: "unMute", args: [] });
+    post({ event: "command", func: "seekTo", args: [0, true] });
+    post({ event: "command", func: "playVideo", args: [] });
 
     setMusicStarted(true);
   }
@@ -344,7 +339,9 @@ export default function PublicCouplePage() {
                 <iframe
                   ref={ytIframeRef}
                   className="absolute -left-[9999px] -top-[9999px] w-[1px] h-[1px] opacity-0 pointer-events-none"
-                  src={`https://www.youtube.com/embed/${ytId}?enablejsapi=1&autoplay=0&controls=0&rel=0&playsinline=1&loop=1&playlist=${ytId}&mute=0`}
+                  src={`https://www.youtube.com/embed/${ytId}?enablejsapi=1&autoplay=0&controls=0&rel=0&playsinline=1&loop=1&playlist=${ytId}&mute=0&origin=${encodeURIComponent(
+                    typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"
+                  )}`}
                   title="Love365 Music"
                   allow="autoplay; encrypted-media"
                 />
