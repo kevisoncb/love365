@@ -1,358 +1,406 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useEffect, useMemo, useState } from "react";
 
 type Plan = "BASIC" | "PREMIUM";
 
-const PLAN: Record<Plan, { maxPhotos: number; maxMessage: number }> = {
-  BASIC: { maxPhotos: 3, maxMessage: 280 },
-  PREMIUM: { maxPhotos: 5, maxMessage: 800 },
-};
-
-function onlyDigits(v: string) {
-  return (v || "").replace(/\D+/g, "");
+function onlyDigits(s: string) {
+  return (s || "").replace(/\D/g, "");
 }
 
-function formatBRPhone(input: string) {
-  const d = onlyDigits(input).slice(0, 11);
-  if (d.length <= 2) return d ? `(${d}` : "";
-  const ddd = d.slice(0, 2);
-  const rest = d.slice(2);
-  if (rest.length <= 4) return `(${ddd}) ${rest}`;
-  if (rest.length <= 8) return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
-  return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5, 9)}`;
+function isValidYouTubeUrl(urlStr: string) {
+  try {
+    const url = new URL(urlStr);
+    const host = url.hostname.replace(/^www\./, "");
+
+    if (host === "youtu.be") {
+      const id = url.pathname.replace("/", "");
+      return /^[a-zA-Z0-9_-]{11}$/.test(id);
+    }
+
+    if (host === "youtube.com" || host === "m.youtube.com") {
+      const v = url.searchParams.get("v");
+      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return true;
+
+      const shorts = url.pathname.match(/\/shorts\/([a-zA-Z0-9_-]{11})/);
+      if (shorts?.[1]) return true;
+
+      const embed = url.pathname.match(/\/embed\/([a-zA-Z0-9_-]{11})/);
+      if (embed?.[1]) return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
-export default function Criar() {
-  const router = useRouter();
-  const fileRef = useRef<HTMLInputElement | null>(null);
+export default function CreatePage() {
+  const limits = useMemo(
+    () => ({
+      namesMax: 40,
+      messageMax: 600,
+      ytMax: 220,
+      emailMax: 120,
+      whatsappMaxDigits: 13,
+      maxPhotosBasic: 3,
+      maxPhotosPremium: 5,
+    }),
+    []
+  );
 
-  const [plan, setPlan] = useState<Plan | "">("");
+  const [plan, setPlan] = useState<Plan>("BASIC");
   const [names, setNames] = useState("");
   const [startDate, setStartDate] = useState("");
   const [message, setMessage] = useState("");
 
+  const [yt, setYt] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
-  const [whats, setWhats] = useState("");
-
-  const [youtubeUrl, setYoutubeUrl] = useState(""); // Premium (opcional)
 
   const [photos, setPhotos] = useState<File[]>([]);
-  const previews = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
 
-  const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const planSelected = plan === "BASIC" || plan === "PREMIUM";
-  const maxPhotos = planSelected ? PLAN[plan].maxPhotos : 0;
-  const maxMessage = planSelected ? PLAN[plan].maxMessage : 0;
+  // modal "pagamento em análise"
+  const [showPending, setShowPending] = useState(false);
 
-  function onPickPhotos(list: FileList | null) {
-    if (!list) return;
-    if (!planSelected) return setError("Selecione um plano antes de enviar fotos.");
+  const maxPhotos = plan === "PREMIUM" ? limits.maxPhotosPremium : limits.maxPhotosBasic;
 
-    const incoming = Array.from(list).filter((f) => f.type.startsWith("image/"));
-    const merged = [...photos, ...incoming];
+  useEffect(() => {
+    // revoke old
+    photoPreviews.forEach((u) => URL.revokeObjectURL(u));
+    const urls = photos.map((f) => URL.createObjectURL(f));
+    setPhotoPreviews(urls);
 
-    if (merged.length > maxPhotos) {
-      setPhotos(merged.slice(0, maxPhotos));
-      setError(`Máximo de ${maxPhotos} fotos no plano selecionado.`);
-      return;
-    }
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos]);
 
-    const tooBig = merged.find((f) => f.size > 5 * 1024 * 1024);
-    if (tooBig) {
-      setError("Uma das fotos excede 5MB.");
-      return;
-    }
+  function onPickPhotos(files: FileList | null) {
+    if (!files) return;
 
-    setError(null);
+    const picked = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    const merged = [...photos, ...picked].slice(0, maxPhotos);
     setPhotos(merged);
-
-    // Permite escolher o mesmo arquivo de novo (caso remova e queira re-adicionar)
-    if (fileRef.current) fileRef.current.value = "";
   }
 
-  function removePhoto(i: number) {
-    const copy = photos.slice();
-    copy.splice(i, 1);
-    setPhotos(copy);
+  function removePhoto(idx: number) {
+    setPhotos((p) => p.filter((_, i) => i !== idx));
   }
 
-  function clearPhotos() {
+  function validate(): string | null {
+    const n = names.trim();
+    if (n.length < 3) return "Informe o nome do casal (mínimo 3 caracteres).";
+    if (n.length > limits.namesMax) return `Nome do casal: máximo ${limits.namesMax} caracteres.`;
+
+    if (!startDate) return "Selecione a data de início.";
+
+    if (message.length > limits.messageMax) return `Texto: máximo ${limits.messageMax} caracteres.`;
+
+    if (photos.length === 0) return "Envie pelo menos 1 foto.";
+    if (photos.length > maxPhotos) return `Você pode enviar no máximo ${maxPhotos} fotos nesse plano.`;
+
+    const wpp = onlyDigits(whatsapp);
+    const em = email.trim();
+    if (!wpp && !em) return "Informe WhatsApp ou e-mail para receber o link.";
+    if (wpp && (wpp.length < 10 || wpp.length > limits.whatsappMaxDigits))
+      return "WhatsApp inválido. Use DDD e número (somente números).";
+    if (em && (em.length > limits.emailMax || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)))
+      return "E-mail inválido.";
+
+    if (plan === "PREMIUM" && yt.trim()) {
+      if (yt.trim().length > limits.ytMax) return `Link do YouTube: máximo ${limits.ytMax} caracteres.`;
+      if (!isValidYouTubeUrl(yt.trim())) return "Link do YouTube inválido.";
+    }
+
+    if (plan === "BASIC" && yt.trim()) {
+      return "No Básico não há música. Apague o link ou selecione Premium.";
+    }
+
+    return null;
+  }
+
+  function resetForm() {
+    setPlan("BASIC");
+    setNames("");
+    setStartDate("");
+    setMessage("");
+    setYt("");
+    setWhatsapp("");
+    setEmail("");
     setPhotos([]);
-    if (fileRef.current) fileRef.current.value = "";
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    if (submitting) return;
 
-    if (!planSelected) return setError("Selecione um plano.");
-    const safeNames = names.trim().slice(0, 60);
-    if (!safeNames) return setError("Informe o nome do casal.");
-    if (!startDate) return setError("Informe a data de início.");
+    const err = validate();
+    if (err) {
+      alert(err);
+      return;
+    }
 
-    // data não futura
-    const today = new Date();
-    const inputDate = new Date(startDate + "T00:00:00");
-    if (inputDate.getTime() > today.getTime()) return setError("A data de início não pode ser no futuro.");
-
-    // fotos
-    if (photos.length === 0) return setError("Envie pelo menos 1 foto.");
-    if (photos.length > maxPhotos) return setError(`Máximo de ${maxPhotos} fotos.`);
-
-    // contato
-    const safeEmail = email.trim().slice(0, 120);
-    const whatsDigits = onlyDigits(whats).slice(0, 11);
-    const hasEmail = !!safeEmail;
-    const hasWhats = whatsDigits.length >= 10;
-    if (!hasEmail && !hasWhats) return setError("Informe e-mail ou WhatsApp para receber o link.");
-
-    const fd = new FormData();
-    fd.append("plan", plan);
-    fd.append("names", safeNames);
-    fd.append("startDate", startDate);
-    fd.append("message", message.trim().slice(0, maxMessage));
-    fd.append("email", safeEmail);
-    fd.append("whats", whatsDigits);
-
-    // Premium: música opcional
-    if (plan === "PREMIUM") fd.append("youtubeUrl", youtubeUrl.trim().slice(0, 300));
-
-    photos.forEach((f) => fd.append("photos", f));
-
-    setSending(true);
+    setSubmitting(true);
     try {
-      const res = await fetch("/api/create-page", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || "Falha ao criar.");
+      const fd = new FormData();
+      fd.append("plan", plan);
+      fd.append("names", names.trim());
+      fd.append("startDate", startDate);
+      fd.append("message", message.trim());
 
-      router.push(json.url); // /p/{token}
-    } catch (err: any) {
-      setError(err?.message || "Erro ao criar.");
+      const wppDigits = onlyDigits(whatsapp);
+      if (wppDigits) fd.append("whatsapp", wppDigits);
+      if (email.trim()) fd.append("email", email.trim());
+
+      if (plan === "PREMIUM" && yt.trim()) fd.append("yt", yt.trim());
+
+      photos.forEach((f) => fd.append("photos", f));
+
+      const res = await fetch("/api/create-page", { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        alert(json?.error || "Erro ao criar página.");
+        return;
+      }
+
+      // Não mostrar token/link ao cliente.
+      // Para DEV: se você quiser, pode ver no console.
+      // console.log("created:", json);
+
+      resetForm();
+      setShowPending(true);
     } finally {
-      setSending(false);
+      setSubmitting(false);
     }
   }
 
+  const roseInput =
+    "w-full rounded-2xl bg-black/30 border border-rose-300/25 px-4 py-3 text-white placeholder:text-white/40 outline-none focus:border-rose-300/60 focus:ring-2 focus:ring-rose-400/25";
+
+  const roseCard =
+    "rounded-3xl border border-rose-300/15 bg-rose-500/5 shadow-[0_18px_60px_rgba(0,0,0,0.45)]";
+
   return (
-    <main className="min-h-screen bg-white">
-      <div className="mx-auto max-w-xl px-4 py-6">
-        <h1 className="text-2xl font-semibold">Criar Love365</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Obrigatório: plano, nome, data, fotos e receber link (e-mail ou WhatsApp).
-        </p>
+    <main className="min-h-screen bg-[#0B0B10] text-white">
+      {/* Modal pagamento em análise */}
+      {showPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-rose-300/20 bg-[#0B0B10] p-6 shadow-[0_0_60px_rgba(244,63,94,0.18)]">
+            <h2 className="text-xl font-semibold tracking-tight">Pagamento em análise</h2>
+            <p className="mt-2 text-sm text-white/70">
+              Assim que o pagamento for aprovado, você receberá o link por WhatsApp ou e-mail.
+            </p>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-6">
-          {/* Plano */}
-          <section className="rounded-2xl border p-4">
-            <div className="text-sm font-medium">
-              Plano <span className="text-red-600">*</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowPending(false)}
+              className="mt-5 w-full rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm font-semibold hover:bg-rose-500/15"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
 
-            <div className="mt-3 grid grid-cols-2 gap-3">
+      <div className="mx-auto max-w-xl px-4 py-10">
+        <h1 className="text-3xl font-semibold tracking-tight">Criar Love365</h1>
+        <p className="mt-2 text-sm text-white/70">Preencha os dados e finalize o pedido.</p>
+
+        <form onSubmit={onSubmit} className="mt-7 space-y-5">
+          {/* Plano em caixas */}
+          <div className={`${roseCard} p-5`}>
+            <div className="text-sm text-white/80">Plano</div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={() => {
-                  setPlan("BASIC");
-                  if (photos.length > PLAN.BASIC.maxPhotos) setPhotos(photos.slice(0, PLAN.BASIC.maxPhotos));
-                  if (message.length > PLAN.BASIC.maxMessage) setMessage(message.slice(0, PLAN.BASIC.maxMessage));
-                  setYoutubeUrl("");
-                  setError(null);
-                }}
-                className={`rounded-xl border p-3 text-left ${plan === "BASIC" ? "border-black" : "border-gray-200"}`}
+                onClick={() => setPlan("BASIC")}
+                className={`text-left rounded-3xl border p-4 transition ${
+                  plan === "BASIC"
+                    ? "border-rose-300/45 bg-rose-500/10 shadow-[0_0_30px_rgba(244,63,94,0.18)]"
+                    : "border-rose-300/15 bg-white/5 hover:bg-white/10"
+                }`}
               >
-                <div className="text-sm font-semibold">Básico</div>
-                <div className="text-xs text-gray-600">Até 3 fotos • Sem música</div>
+                <div className="text-base font-semibold">Básico</div>
+                <div className="mt-1 text-xs text-white/70">Até {limits.maxPhotosBasic} fotos</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => {
-                  setPlan("PREMIUM");
-                  if (photos.length > PLAN.PREMIUM.maxPhotos) setPhotos(photos.slice(0, PLAN.PREMIUM.maxPhotos));
-                  if (message.length > PLAN.PREMIUM.maxMessage) setMessage(message.slice(0, PLAN.PREMIUM.maxMessage));
-                  setError(null);
-                }}
-                className={`rounded-xl border p-3 text-left ${plan === "PREMIUM" ? "border-black" : "border-gray-200"}`}
+                onClick={() => setPlan("PREMIUM")}
+                className={`text-left rounded-3xl border p-4 transition ${
+                  plan === "PREMIUM"
+                    ? "border-rose-300/45 bg-rose-500/10 shadow-[0_0_30px_rgba(244,63,94,0.18)]"
+                    : "border-rose-300/15 bg-white/5 hover:bg-white/10"
+                }`}
               >
-                <div className="text-sm font-semibold">Premium</div>
-                <div className="text-xs text-gray-600">Até 5 fotos • Música opcional</div>
+                <div className="text-base font-semibold">Premium</div>
+                <div className="mt-1 text-xs text-white/70">Até {limits.maxPhotosPremium} fotos</div>
               </button>
             </div>
-          </section>
 
-          {/* Dados */}
-          <section className={`rounded-2xl border p-4 space-y-4 ${!planSelected ? "opacity-50" : ""}`}>
+            <div className="mt-3 text-xs text-white/60">
+              Selecionado: <span className="text-white/85">{plan}</span> — máximo de{" "}
+              <span className="text-white/85">{maxPhotos}</span> fotos.
+            </div>
+          </div>
+
+          {/* Nome + Data */}
+          <div className={`${roseCard} p-5 space-y-4`}>
             <div>
-              <label className="text-xs font-medium text-gray-700">
-                Nome do casal <span className="text-red-600">*</span>
-              </label>
+              <label className="text-sm text-white/80">Nome do casal</label>
               <input
-                disabled={!planSelected}
+                className={`${roseInput} mt-2`}
                 value={names}
-                onChange={(e) => setNames(e.target.value.slice(0, 60))}
-                maxLength={60}
-                className="mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-50"
-                placeholder="Ex: Kev & Isa"
+                onChange={(e) => setNames(e.target.value.slice(0, limits.namesMax))}
+                placeholder="Ex: Eve e Lucas"
+                maxLength={limits.namesMax}
+                required
               />
-              <div className="mt-1 text-xs text-gray-500">{names.length}/60</div>
+              <div className="mt-1 text-xs text-white/60">
+                {names.length}/{limits.namesMax}
+              </div>
             </div>
 
             <div>
-              <label className="text-xs font-medium text-gray-700">
-                Data de início <span className="text-red-600">*</span>
-              </label>
+              <label className="text-sm text-white/80">Data de início</label>
               <input
-                disabled={!planSelected}
                 type="date"
+                className={`${roseInput} mt-2`}
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-50"
+                required
               />
             </div>
+          </div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-700">Texto (opcional)</label>
-              <textarea
-                disabled={!planSelected}
-                value={message}
-                onChange={(e) => setMessage(e.target.value.slice(0, maxMessage))}
-                maxLength={maxMessage}
-                rows={4}
-                className="mt-1 w-full resize-none rounded-xl border px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-50"
-                placeholder="Escreva algo…"
-              />
-              {planSelected && <div className="mt-1 text-xs text-gray-500">{message.length}/{maxMessage}</div>}
-            </div>
-          </section>
-
-          {/* Fotos */}
-          <section className={`rounded-2xl border p-4 ${!planSelected ? "opacity-50" : ""}`}>
+          {/* Fotos com preview */}
+          <div className={`${roseCard} p-5`}>
             <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">
-                Fotos <span className="text-red-600">*</span>
-              </div>
-              <div className="text-xs text-gray-600">{photos.length}/{maxPhotos}</div>
+              <label className="text-sm text-white/80">Fotos</label>
+              <span className="text-xs text-white/60">
+                {photos.length}/{maxPhotos}
+              </span>
             </div>
 
-            {/* Input escondido + botão (DETALHE pedido) */}
-            <input
-              ref={fileRef}
-              disabled={!planSelected}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(e) => onPickPhotos(e.target.files)}
-              className="hidden"
-            />
-
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                disabled={!planSelected}
-                onClick={() => fileRef.current?.click()}
-                className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-60"
-              >
-                Adicionar fotos
-              </button>
+            <div className="mt-3 flex items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm font-medium hover:bg-rose-500/15">
+                Selecionar fotos
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => onPickPhotos(e.target.files)}
+                />
+              </label>
 
               <button
                 type="button"
-                disabled={!planSelected || photos.length === 0}
-                onClick={clearPhotos}
-                className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-60"
+                onClick={() => setPhotos([])}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm hover:bg-white/10"
+                disabled={photos.length === 0}
               >
                 Limpar
               </button>
             </div>
 
-            {photos.length > 0 && (
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                {previews.map((src, i) => (
-                  <div key={i} className="relative">
+            {photoPreviews.length > 0 && (
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {photoPreviews.map((src, idx) => (
+                  <div key={src} className="relative overflow-hidden rounded-2xl border border-rose-300/15 bg-black/20">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={src} alt={`Foto ${i + 1}`} className="h-24 w-full rounded-xl object-cover border" />
+                    <img src={src} alt={`preview ${idx + 1}`} className="h-28 w-full object-cover" />
                     <button
                       type="button"
-                      onClick={() => removePhoto(i)}
-                      className="absolute right-1 top-1 rounded-lg bg-black/70 px-2 py-1 text-xs text-white"
+                      onClick={() => removePhoto(idx)}
+                      className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/75"
+                      aria-label="Remover foto"
                     >
-                      x
+                      ✕
                     </button>
                   </div>
                 ))}
               </div>
             )}
+          </div>
 
-            <p className="mt-2 text-xs text-gray-500">
-              Dica: selecione várias fotos de uma vez. Limite por plano.
-            </p>
-          </section>
+          {/* Texto */}
+          <div className={`${roseCard} p-5`}>
+            <label className="text-sm text-white/80">Texto (opcional)</label>
+            <textarea
+              className={`${roseInput} mt-2 min-h-[120px]`}
+              value={message}
+              onChange={(e) => setMessage(e.target.value.slice(0, limits.messageMax))}
+              placeholder="Escreva uma mensagem…"
+              maxLength={limits.messageMax}
+            />
+            <div className="mt-1 text-xs text-white/60">
+              {message.length}/{limits.messageMax}
+            </div>
+          </div>
 
-          {/* Música Premium */}
+          {/* YouTube (Premium) */}
           {plan === "PREMIUM" && (
-            <section className="rounded-2xl border p-4">
-              <div className="text-sm font-medium">Música (YouTube) — Premium (opcional)</div>
+            <div className={`${roseCard} p-5`}>
+              <label className="text-sm text-white/80">Link da música do YouTube (opcional)</label>
               <input
-                value={youtubeUrl}
-                onChange={(e) => setYoutubeUrl(e.target.value.slice(0, 300))}
-                maxLength={300}
-                className="mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-black"
-                placeholder="Cole o link do YouTube (opcional)"
-                inputMode="url"
+                className={`${roseInput} mt-2`}
+                value={yt}
+                onChange={(e) => setYt(e.target.value.slice(0, limits.ytMax))}
+                placeholder="Ex: https://www.youtube.com/watch?v=79KWwlhbOD8"
+                maxLength={limits.ytMax}
               />
-            </section>
+              <div className="mt-1 text-xs text-white/60">
+                {yt.length}/{limits.ytMax}
+              </div>
+            </div>
           )}
 
-          {/* Receber link */}
-          <section className={`rounded-2xl border p-4 space-y-3 ${!planSelected ? "opacity-50" : ""}`}>
-            <div className="text-sm font-medium">
-              Receber o link <span className="text-red-600">*</span>
-            </div>
+          {/* Envio */}
+          <div className={`${roseCard} p-5`}>
+            <div className="text-sm text-white/80">Receber link via (obrigatório pelo menos 1)</div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-700">E-mail</label>
-              <input
-                disabled={!planSelected}
-                value={email}
-                onChange={(e) => setEmail(e.target.value.slice(0, 120))}
-                maxLength={120}
-                className="mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-50"
-                placeholder="seuemail@exemplo.com"
-                inputMode="email"
-              />
-            </div>
+            <div className="mt-4 grid gap-4">
+              <div>
+                <div className="text-xs text-white/60">WhatsApp (somente números)</div>
+                <input
+                  className={`${roseInput} mt-2`}
+                  value={whatsapp}
+                  onChange={(e) =>
+                    setWhatsapp(onlyDigits(e.target.value).slice(0, limits.whatsappMaxDigits))
+                  }
+                  placeholder="Ex: 27999999999"
+                  inputMode="numeric"
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-700">WhatsApp</label>
-              <input
-                disabled={!planSelected}
-                value={whats}
-                onChange={(e) => setWhats(formatBRPhone(e.target.value))}
-                maxLength={20}
-                className="mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-black disabled:bg-gray-50"
-                placeholder="(27) 99999-9999"
-                inputMode="tel"
-              />
+              <div>
+                <div className="text-xs text-white/60">E-mail</div>
+                <input
+                  type="email"
+                  className={`${roseInput} mt-2`}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value.slice(0, limits.emailMax))}
+                  placeholder="exemplo@email.com"
+                  maxLength={limits.emailMax}
+                />
+              </div>
             </div>
-
-            <p className="text-xs text-gray-500">Informe pelo menos um: e-mail ou WhatsApp.</p>
-          </section>
-
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          </div>
 
           <button
-            disabled={!planSelected || sending}
-            className="w-full rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-3xl border border-rose-300/25 bg-rose-500/10 px-5 py-4 text-sm font-semibold hover:bg-rose-500/15 disabled:opacity-60 shadow-[0_0_35px_rgba(244,63,94,0.18)]"
           >
-            {sending ? "Criando..." : "Criar minha página"}
+            {submitting ? "Enviando..." : "Finalizar pedido"}
           </button>
         </form>
       </div>
