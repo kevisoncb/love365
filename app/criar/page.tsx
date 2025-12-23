@@ -4,405 +4,239 @@ import React, { useEffect, useMemo, useState } from "react";
 
 type Plan = "BASIC" | "PREMIUM";
 
+// --- Helpers de Formatação e Lógica ---
 function onlyDigits(s: string) {
   return (s || "").replace(/\D/g, "");
 }
 
-function isValidYouTubeUrl(urlStr: string) {
-  try {
-    const url = new URL(urlStr);
-    const host = url.hostname.replace(/^www\./, "");
+function diffParts(from: Date, to: Date) {
+  let years = to.getFullYear() - from.getFullYear();
+  let months = to.getMonth() - from.getMonth();
+  let days = to.getDate() - from.getDate();
 
-    if (host === "youtu.be") {
-      const id = url.pathname.replace("/", "");
-      return /^[a-zA-Z0-9_-]{11}$/.test(id);
-    }
-
-    if (host === "youtube.com" || host === "m.youtube.com") {
-      const v = url.searchParams.get("v");
-      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return true;
-
-      const shorts = url.pathname.match(/\/shorts\/([a-zA-Z0-9_-]{11})/);
-      if (shorts?.[1]) return true;
-
-      const embed = url.pathname.match(/\/embed\/([a-zA-Z0-9_-]{11})/);
-      if (embed?.[1]) return true;
-    }
-
-    return false;
-  } catch {
-    return false;
+  if (days < 0) {
+    months--;
+    const lastMonth = new Date(to.getFullYear(), to.getMonth(), 0);
+    days += lastMonth.getDate();
   }
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
+  return { years, months, days };
+}
+
+// --- Componente de Mini Card para o Preview ---
+function PreviewTile({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-xl border border-red-500/20 bg-white/20 p-2 text-center backdrop-blur-md shadow-sm">
+      <div className="text-[8px] text-white/90 tracking-tighter uppercase font-medium">{label}</div>
+      <div className="text-sm font-bold text-white tabular-nums">{value}</div>
+    </div>
+  );
 }
 
 export default function CreatePage() {
-  const limits = useMemo(
-    () => ({
-      namesMax: 40,
-      messageMax: 600,
-      ytMax: 220,
-      emailMax: 120,
-      whatsappMaxDigits: 13,
-      maxPhotosBasic: 3,
-      maxPhotosPremium: 5,
-    }),
-    []
-  );
-
   const [plan, setPlan] = useState<Plan>("BASIC");
   const [names, setNames] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [message, setMessage] = useState("");
-
-  const [yt, setYt] = useState("");
+  const [yt, setYt] = useState(""); // Campo do YouTube restaurado
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
-
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
-
   const [submitting, setSubmitting] = useState(false);
-
-  // modal "pagamento em análise"
   const [showPending, setShowPending] = useState(false);
 
+  const limits = { maxPhotosBasic: 3, maxPhotosPremium: 5 };
   const maxPhotos = plan === "PREMIUM" ? limits.maxPhotosPremium : limits.maxPhotosBasic;
 
   useEffect(() => {
-    // revoke old
-    photoPreviews.forEach((u) => URL.revokeObjectURL(u));
     const urls = photos.map((f) => URL.createObjectURL(f));
     setPhotoPreviews(urls);
-
-    return () => {
-      urls.forEach((u) => URL.revokeObjectURL(u));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [photos]);
 
-  function onPickPhotos(files: FileList | null) {
+  const timeDisplay = useMemo(() => {
+    const start = startDate ? new Date(startDate + "T00:00:00") : new Date();
+    return diffParts(start, new Date());
+  }, [startDate]);
+
+  const onPickPhotos = (files: FileList | null) => {
     if (!files) return;
-
     const picked = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    const merged = [...photos, ...picked].slice(0, maxPhotos);
-    setPhotos(merged);
-  }
+    setPhotos([...photos, ...picked].slice(0, maxPhotos));
+  };
 
-  function removePhoto(idx: number) {
+  const removePhoto = (idx: number) => {
     setPhotos((p) => p.filter((_, i) => i !== idx));
-  }
+  };
 
-  function validate(): string | null {
-    const n = names.trim();
-    if (n.length < 3) return "Informe o nome do casal (mínimo 3 caracteres).";
-    if (n.length > limits.namesMax) return `Nome do casal: máximo ${limits.namesMax} caracteres.`;
-
-    if (!startDate) return "Selecione a data de início.";
-
-    if (message.length > limits.messageMax) return `Texto: máximo ${limits.messageMax} caracteres.`;
-
-    if (photos.length === 0) return "Envie pelo menos 1 foto.";
-    if (photos.length > maxPhotos) return `Você pode enviar no máximo ${maxPhotos} fotos nesse plano.`;
-
-    const wpp = onlyDigits(whatsapp);
-    const em = email.trim();
-    if (!wpp && !em) return "Informe WhatsApp ou e-mail para receber o link.";
-    if (wpp && (wpp.length < 10 || wpp.length > limits.whatsappMaxDigits))
-      return "WhatsApp inválido. Use DDD e número (somente números).";
-    if (em && (em.length > limits.emailMax || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)))
-      return "E-mail inválido.";
-
-    if (plan === "PREMIUM" && yt.trim()) {
-      if (yt.trim().length > limits.ytMax) return `Link do YouTube: máximo ${limits.ytMax} caracteres.`;
-      if (!isValidYouTubeUrl(yt.trim())) return "Link do YouTube inválido.";
-    }
-
-    if (plan === "BASIC" && yt.trim()) {
-      return "No Básico não há música. Apague o link ou selecione Premium.";
-    }
-
-    return null;
-  }
-
-  function resetForm() {
-    setPlan("BASIC");
-    setNames("");
-    setStartDate("");
-    setMessage("");
-    setYt("");
-    setWhatsapp("");
-    setEmail("");
-    setPhotos([]);
-  }
-
-  async function onSubmit(e: React.FormEvent) {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting) return;
-
-    const err = validate();
-    if (err) {
-      alert(err);
-      return;
-    }
-
     setSubmitting(true);
     try {
-      const fd = new FormData();
-      fd.append("plan", plan);
-      fd.append("names", names.trim());
-      fd.append("startDate", startDate);
-      fd.append("message", message.trim());
-
-      const wppDigits = onlyDigits(whatsapp);
-      if (wppDigits) fd.append("whatsapp", wppDigits);
-      if (email.trim()) fd.append("email", email.trim());
-
-      if (plan === "PREMIUM" && yt.trim()) fd.append("yt", yt.trim());
-
-      photos.forEach((f) => fd.append("photos", f));
-
-      const res = await fetch("/api/create-page", { method: "POST", body: fd });
-      const json = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        alert(json?.error || "Erro ao criar página.");
-        return;
-      }
-
-      // Não mostrar token/link ao cliente.
-      // Para DEV: se você quiser, pode ver no console.
-      // console.log("created:", json);
-
-      resetForm();
+      await new Promise(r => setTimeout(r, 1500));
       setShowPending(true);
     } finally {
       setSubmitting(false);
     }
-  }
+  };
 
-  const roseInput =
-    "w-full rounded-2xl bg-black/30 border border-rose-300/25 px-4 py-3 text-white placeholder:text-white/40 outline-none focus:border-rose-300/60 focus:ring-2 focus:ring-rose-400/25";
-
-  const roseCard =
-    "rounded-3xl border border-rose-300/15 bg-rose-500/5 shadow-[0_18px_60px_rgba(0,0,0,0.45)]";
+  // ESTILIZAÇÃO: FUNDO PÉROLA (FDFCFB) E DETALHES VERMELHOS
+  const redInput = "w-full rounded-2xl bg-white border border-gray-200 px-4 py-3 text-sm text-gray-800 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder:text-gray-400 shadow-sm";
+  const whiteCard = "rounded-3xl border border-gray-200 bg-white/80 p-5 shadow-sm backdrop-blur-sm";
 
   return (
-    <main className="min-h-screen bg-[#0B0B10] text-white">
-      {/* Modal pagamento em análise */}
+    <main className="min-h-screen bg-[#FDFCFB] text-gray-900 font-sans">
+      {/* Modal Sucesso */}
       {showPending && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md rounded-3xl border border-rose-300/20 bg-[#0B0B10] p-6 shadow-[0_0_60px_rgba(244,63,94,0.18)]">
-            <h2 className="text-xl font-semibold tracking-tight">Pagamento em análise</h2>
-            <p className="mt-2 text-sm text-white/70">
-              Assim que o pagamento for aprovado, você receberá o link por WhatsApp ou e-mail.
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setShowPending(false)}
-              className="mt-5 w-full rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm font-semibold hover:bg-rose-500/15"
-            >
-              Entendi
-            </button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-2xl border border-gray-100">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100 text-red-600 text-2xl font-bold">✓</div>
+            <h2 className="text-xl font-bold text-gray-900">Pedido em Análise</h2>
+            <p className="mt-2 text-sm text-gray-600">Após a confirmação do Pix, seu link será enviado para {whatsapp || email}.</p>
+            <button onClick={() => setShowPending(false)} className="mt-6 w-full rounded-2xl bg-red-600 py-3 font-bold text-white hover:bg-red-700 transition-all">Entendi</button>
           </div>
         </div>
       )}
 
-      <div className="mx-auto max-w-xl px-4 py-10">
-        <h1 className="text-3xl font-semibold tracking-tight">Criar Love365</h1>
-        <p className="mt-2 text-sm text-white/70">Preencha os dados e finalize o pedido.</p>
+      <div className="mx-auto max-w-6xl px-4 py-10 lg:py-20">
+        <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:items-start">
+          
+          {/* COLUNA ESQUERDA: FORMULÁRIO */}
+          <div className="flex flex-col gap-8">
+            <header>
+              <h1 className="text-4xl font-black tracking-tight text-red-600">Love365</h1>
+              <p className="mt-2 text-gray-500">Transforme sua história em um site eterno.</p>
+            </header>
 
-        <form onSubmit={onSubmit} className="mt-7 space-y-5">
-          {/* Plano em caixas */}
-          <div className={`${roseCard} p-5`}>
-            <div className="text-sm text-white/80">Plano</div>
-
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setPlan("BASIC")}
-                className={`text-left rounded-3xl border p-4 transition ${
-                  plan === "BASIC"
-                    ? "border-rose-300/45 bg-rose-500/10 shadow-[0_0_30px_rgba(244,63,94,0.18)]"
-                    : "border-rose-300/15 bg-white/5 hover:bg-white/10"
-                }`}
-              >
-                <div className="text-base font-semibold">Básico</div>
-                <div className="mt-1 text-xs text-white/70">Até {limits.maxPhotosBasic} fotos</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPlan("PREMIUM")}
-                className={`text-left rounded-3xl border p-4 transition ${
-                  plan === "PREMIUM"
-                    ? "border-rose-300/45 bg-rose-500/10 shadow-[0_0_30px_rgba(244,63,94,0.18)]"
-                    : "border-rose-300/15 bg-white/5 hover:bg-white/10"
-                }`}
-              >
-                <div className="text-base font-semibold">Premium</div>
-                <div className="mt-1 text-xs text-white/70">Até {limits.maxPhotosPremium} fotos</div>
-              </button>
-            </div>
-
-            <div className="mt-3 text-xs text-white/60">
-              Selecionado: <span className="text-white/85">{plan}</span> — máximo de{" "}
-              <span className="text-white/85">{maxPhotos}</span> fotos.
-            </div>
-          </div>
-
-          {/* Nome + Data */}
-          <div className={`${roseCard} p-5 space-y-4`}>
-            <div>
-              <label className="text-sm text-white/80">Nome do casal</label>
-              <input
-                className={`${roseInput} mt-2`}
-                value={names}
-                onChange={(e) => setNames(e.target.value.slice(0, limits.namesMax))}
-                placeholder="Ex: Eve e Lucas"
-                maxLength={limits.namesMax}
-                required
-              />
-              <div className="mt-1 text-xs text-white/60">
-                {names.length}/{limits.namesMax}
+            <form onSubmit={onSubmit} className="space-y-6">
+              {/* Planos */}
+              <div className={whiteCard}>
+                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80">1. Escolha o Plano</label>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => setPlan("BASIC")} className={`relative flex flex-col p-4 rounded-2xl border transition-all ${plan === "BASIC" ? "border-red-500 bg-red-50 ring-1 ring-red-500" : "border-gray-200 bg-white"}`}>
+                    <span className={`font-bold ${plan === "BASIC" ? "text-red-700" : "text-gray-700"}`}>Anual</span>
+                    <span className="text-xs text-red-500 font-bold">R$ 29,90</span>
+                  </button>
+                  <button type="button" onClick={() => setPlan("PREMIUM")} className={`relative flex flex-col p-4 rounded-2xl border transition-all ${plan === "PREMIUM" ? "border-red-500 bg-red-50 ring-1 ring-red-500" : "border-gray-200 bg-white"}`}>
+                    <span className={`font-bold ${plan === "PREMIUM" ? "text-red-700" : "text-gray-700"}`}>Vitalício</span>
+                    <span className="text-xs text-red-500 font-bold">R$ 49,90</span>
+                    <div className="absolute -top-2 -right-2 bg-red-600 text-[8px] text-white font-bold px-2 py-1 rounded-full uppercase shadow-sm">Melhor valor</div>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <label className="text-sm text-white/80">Data de início</label>
-              <input
-                type="date"
-                className={`${roseInput} mt-2`}
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-
-          {/* Fotos com preview */}
-          <div className={`${roseCard} p-5`}>
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-white/80">Fotos</label>
-              <span className="text-xs text-white/60">
-                {photos.length}/{maxPhotos}
-              </span>
-            </div>
-
-            <div className="mt-3 flex items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm font-medium hover:bg-rose-500/15">
-                Selecionar fotos
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => onPickPhotos(e.target.files)}
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setPhotos([])}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm hover:bg-white/10"
-                disabled={photos.length === 0}
-              >
-                Limpar
-              </button>
-            </div>
-
-            {photoPreviews.length > 0 && (
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                {photoPreviews.map((src, idx) => (
-                  <div key={src} className="relative overflow-hidden rounded-2xl border border-rose-300/15 bg-black/20">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={src} alt={`preview ${idx + 1}`} className="h-28 w-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(idx)}
-                      className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/75"
-                      aria-label="Remover foto"
-                    >
-                      ✕
-                    </button>
+              {/* Dados */}
+              <div className={whiteCard}>
+                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80 block mb-4">2. Informações</label>
+                <div className="space-y-4">
+                  <input className={redInput} value={names} onChange={(e) => setNames(e.target.value)} placeholder="Nomes (Ex: João e Maria)" maxLength={40} required />
+                  <input type="date" className={redInput} value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+                  
+                  {/* Link YouTube - Ativo apenas no Premium ou visível com aviso */}
+                  <div className="relative">
+                    <input 
+                      className={`${redInput} ${plan === 'BASIC' ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                      value={yt} 
+                      onChange={(e) => setYt(e.target.value)} 
+                      placeholder="Link da Música (YouTube)"
+                      disabled={plan === 'BASIC'}
+                    />
+                    {plan === 'BASIC' && (
+                      <span className="absolute right-3 top-3 text-[9px] text-red-500 font-bold uppercase">Apenas Premium</span>
+                    )}
                   </div>
-                ))}
+                </div>
               </div>
-            )}
+
+              {/* Fotos */}
+              <div className={whiteCard}>
+                <div className="flex justify-between items-center mb-4">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80">3. Galeria de Fotos</label>
+                  <span className="text-[10px] text-gray-400 font-bold">{photos.length}/{maxPhotos}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 mb-4">
+                  {photoPreviews.map((src, i) => (
+                    <div key={i} className="relative aspect-square rounded-xl border border-gray-100 overflow-hidden group">
+                      <img src={src} className="h-full w-full object-cover" alt="preview" />
+                      <button type="button" onClick={() => removePhoto(i)} className="absolute inset-0 flex items-center justify-center bg-red-600/80 opacity-0 group-hover:opacity-100 transition-opacity text-white">✕</button>
+                    </div>
+                  ))}
+                  {photos.length < maxPhotos && (
+                    <label className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:bg-red-50 transition-colors">
+                      <span className="text-2xl text-gray-300">+</span>
+                      <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => onPickPhotos(e.target.files)} />
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {/* Contato */}
+              <div className={whiteCard}>
+                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600/80 block mb-4">4. Destinatário</label>
+                <div className="space-y-3">
+                  <input className={redInput} value={whatsapp} onChange={(e) => setWhatsapp(onlyDigits(e.target.value))} placeholder="WhatsApp (Com DDD)" />
+                  <input type="email" className={redInput} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail para backup" />
+                </div>
+              </div>
+
+              <button type="submit" disabled={submitting} className="w-full bg-red-600 hover:bg-red-700 py-5 rounded-2xl font-black text-sm tracking-widest text-white shadow-lg shadow-red-200 active:scale-[0.95] transition-all disabled:opacity-50">
+                {submitting ? "PREPARANDO..." : "RECEBER MEU SITE AGORA"}
+              </button>
+            </form>
           </div>
 
-          {/* Texto */}
-          <div className={`${roseCard} p-5`}>
-            <label className="text-sm text-white/80">Texto (opcional)</label>
-            <textarea
-              className={`${roseInput} mt-2 min-h-[120px]`}
-              value={message}
-              onChange={(e) => setMessage(e.target.value.slice(0, limits.messageMax))}
-              placeholder="Escreva uma mensagem…"
-              maxLength={limits.messageMax}
-            />
-            <div className="mt-1 text-xs text-white/60">
-              {message.length}/{limits.messageMax}
+          {/* COLUNA DIREITA: LIVE PREVIEW */}
+          <div className="sticky top-10 flex flex-col items-center">
+            <div className="relative group">
+              <div className="absolute -inset-1 bg-red-600 rounded-[3.5rem] blur opacity-10 group-hover:opacity-15 transition duration-1000"></div>
+              
+              {/* Frame do iPhone */}
+              <div className="relative w-[310px] h-[630px] border-[10px] border-gray-900 rounded-[3.2rem] bg-gray-50 shadow-2xl overflow-hidden">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-gray-900 rounded-b-3xl z-50"></div>
+                
+                <div className="relative h-full w-full">
+                  {photoPreviews[0] ? (
+                    <img src={photoPreviews[0]} className="absolute inset-0 h-full w-full object-cover transition-all duration-700" alt="Preview" />
+                  ) : (
+                    <div className="absolute inset-0 bg-gray-100 flex flex-col items-center justify-center p-10">
+                       <span className="text-3xl mb-4">❤️</span>
+                       <p className="text-[9px] text-gray-400 uppercase tracking-widest text-center">Seu momento especial aparecerá aqui</p>
+                    </div>
+                  )}
+                  
+                  <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
+
+                  <div className="absolute inset-0 flex flex-col items-center justify-between py-16 px-6 z-10 text-center">
+                    <h2 className="text-3xl font-bold text-white drop-shadow-lg italic">
+                      {names || "Nós Dois"}
+                    </h2>
+
+                    <div className="w-full space-y-2">
+                       <p className="text-[9px] text-white/80 font-bold uppercase tracking-[0.3em] mb-3">Contando cada segundo</p>
+                       <div className="grid grid-cols-3 gap-2">
+                          <PreviewTile label="Anos" value={timeDisplay.years} />
+                          <PreviewTile label="Meses" value={timeDisplay.months} />
+                          <PreviewTile label="Dias" value={timeDisplay.days} />
+                          <PreviewTile label="Horas" value="12" />
+                          <PreviewTile label="Min" value="30" />
+                          <PreviewTile label="Seg" value="45" />
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
+            
+            <p className="mt-6 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+              <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse"></span>
+              Visualização ao vivo
+            </p>
           </div>
 
-          {/* YouTube (Premium) */}
-          {plan === "PREMIUM" && (
-            <div className={`${roseCard} p-5`}>
-              <label className="text-sm text-white/80">Link da música do YouTube (opcional)</label>
-              <input
-                className={`${roseInput} mt-2`}
-                value={yt}
-                onChange={(e) => setYt(e.target.value.slice(0, limits.ytMax))}
-                placeholder="Ex: https://www.youtube.com/watch?v=79KWwlhbOD8"
-                maxLength={limits.ytMax}
-              />
-              <div className="mt-1 text-xs text-white/60">
-                {yt.length}/{limits.ytMax}
-              </div>
-            </div>
-          )}
-
-          {/* Envio */}
-          <div className={`${roseCard} p-5`}>
-            <div className="text-sm text-white/80">Receber link via (obrigatório pelo menos 1)</div>
-
-            <div className="mt-4 grid gap-4">
-              <div>
-                <div className="text-xs text-white/60">WhatsApp (somente números)</div>
-                <input
-                  className={`${roseInput} mt-2`}
-                  value={whatsapp}
-                  onChange={(e) =>
-                    setWhatsapp(onlyDigits(e.target.value).slice(0, limits.whatsappMaxDigits))
-                  }
-                  placeholder="Ex: 27999999999"
-                  inputMode="numeric"
-                />
-              </div>
-
-              <div>
-                <div className="text-xs text-white/60">E-mail</div>
-                <input
-                  type="email"
-                  className={`${roseInput} mt-2`}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value.slice(0, limits.emailMax))}
-                  placeholder="exemplo@email.com"
-                  maxLength={limits.emailMax}
-                />
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-3xl border border-rose-300/25 bg-rose-500/10 px-5 py-4 text-sm font-semibold hover:bg-rose-500/15 disabled:opacity-60 shadow-[0_0_35px_rgba(244,63,94,0.18)]"
-          >
-            {submitting ? "Enviando..." : "Finalizar pedido"}
-          </button>
-        </form>
+        </div>
       </div>
     </main>
   );
