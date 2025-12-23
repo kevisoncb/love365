@@ -13,6 +13,7 @@ type PageDTO = {
   photos: string[];
   yt?: string | null;
   createdAt?: string;
+  status?: string;
 };
 
 function pad2(n: number) {
@@ -180,21 +181,20 @@ export default function PublicCouplePage() {
   const [musicStarted, setMusicStarted] = useState(false);
 
   useEffect(() => {
-    // Modo Preview (lê da URL)
     if (token?.startsWith("preview") || searchParams.get("preview") === "true") {
       setData({
         token: "preview",
         plan: (searchParams.get("plan") as Plan) || "BASIC",
         names: searchParams.get("names") || "Exemplo Casal",
         startDate: searchParams.get("date") || "2024-01-01",
-        photos: [], // No preview não carregamos as fotos do File
-        yt: searchParams.get("yt")
+        photos: [], 
+        yt: searchParams.get("yt"),
+        status: "APPROVED"
       });
       setLoading(false);
       return;
     }
 
-    // Modo Real (lê da API)
     if (!token) {
       setLoading(false);
       setApiError("Token ausente.");
@@ -268,14 +268,24 @@ export default function PublicCouplePage() {
     setMusicStarted(true);
   }
 
-  if (loading) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-red-600">Carregando momento especial...</main>;
-  if (!data) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-gray-800"><div className="text-center"><h1>Página não encontrada</h1><p>{apiError}</p></div></main>;
+  if (loading) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-red-600 font-bold">Carregando...</main>;
+  
+  if (!data || (data.status !== "APPROVED" && data.token !== "preview")) {
+    return (
+      <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-center p-6">
+        <div>
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Quase lá! ❤️</h1>
+          <p className="text-gray-500">Aguardando confirmação do pagamento para liberar seu link.</p>
+        </div>
+      </main>
+    );
+  }
 
   const currentPhoto = total > 0 ? photos[index] : null;
   const ytId = premium && data.yt ? extractYouTubeId(data.yt) : null;
 
   return (
-    <main className="bg-[#FDFCFB] min-h-[100svh] text-gray-900">
+    <main className="bg-[#FDFCFB] min-h-[100svh]">
       <div className="min-h-[100svh] sm:flex sm:items-center sm:justify-center sm:px-6 sm:py-10">
         <div className="w-full sm:w-auto">
           <div className="relative sm:rounded-[36px] sm:border sm:border-gray-200 sm:bg-white sm:shadow-2xl overflow-hidden">
@@ -293,9 +303,11 @@ export default function PublicCouplePage() {
                 {currentPhoto ? (
                   <img src={currentPhoto} alt="Foto" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-50 text-gray-300">Aguardando Fotos...</div>
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-50 text-gray-300 text-[10px] uppercase tracking-widest text-center px-4">
+                    Sua foto aparecerá aqui no modo oficial
+                  </div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/70 z-[1]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80 z-[1]" />
                 <HeartsOverlayInHero enabled={premium} />
 
                 {total > 1 && (
@@ -305,8 +317,8 @@ export default function PublicCouplePage() {
                   </>
                 )}
 
-                <div className="absolute inset-x-0 top-0 pt-14 sm:pt-10 px-6 z-20 text-center">
-                  <h1 className="text-4xl sm:text-5xl font-bold text-white drop-shadow-md italic">{data.names}</h1>
+                <div className="absolute inset-x-0 top-0 pt-14 sm:pt-10 px-6 z-20 text-center text-white">
+                  <h1 className="text-4xl sm:text-5xl font-bold drop-shadow-md italic">{data.names}</h1>
                 </div>
 
                 <div className="absolute inset-x-0 bottom-0 pb-12 sm:pb-8 px-6 z-20">
