@@ -10,9 +10,8 @@ type PageDTO = {
   plan: Plan;
   names: string;
   startDate: string;
-  message?: string;
   photos: string[];
-  yt?: string | null;
+  yt?: string | null; // id ou link do youtube
   createdAt?: string;
 };
 
@@ -29,7 +28,218 @@ function diffParts(from: Date, to: Date) {
   return { days, hours, mins, secs };
 }
 
-function TimeBox({
+/* ---------------- YouTube helpers ---------------- */
+
+function extractYouTubeId(input?: string | null): string | null {
+  if (!input) return null;
+  const s = input.trim();
+
+  // Se já parece um ID (11 chars típicos)
+  if (/^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
+
+  // Tenta pegar v=... ou youtu.be/...
+  try {
+    const url = new URL(s);
+    // youtu.be/<id>
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      if (id && /^[a-zA-Z0-9_-]{11}$/.test(id)) return id;
+    }
+    // youtube.com/watch?v=<id>
+    const v = url.searchParams.get("v");
+    if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+
+    // youtube.com/embed/<id>
+    const parts = url.pathname.split("/").filter(Boolean);
+    const embedIdx = parts.indexOf("embed");
+    if (embedIdx >= 0 && parts[embedIdx + 1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[embedIdx + 1])) {
+      return parts[embedIdx + 1];
+    }
+  } catch {
+    // não é URL válida, cai fora
+  }
+  return null;
+}
+
+/**
+ * Player invisível: carrega o vídeo mutado e em loop.
+ * Quando o usuário tocar/clique na página, tentamos unmute + play via postMessage.
+ */
+function YouTubeBackgroundAudio({
+  enabled,
+  youtubeId,
+}: {
+  enabled: boolean;
+  youtubeId: string | null;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [needsTap, setNeedsTap] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || !youtubeId) return;
+
+    // Mostra o aviso: precisa de 1 interação para sair do mute
+    setNeedsTap(true);
+
+    const tryEnableSound = () => {
+      const iframe = iframeRef.current;
+      if (!iframe || !iframe.contentWindow) return;
+
+      // Tenta comandar o player do YouTube (enablejsapi=1)
+      // 1) unmute 2) set volume 3) play
+      const cmds = [
+        { event: "command", func: "unMute", args: [] },
+        { event: "command", func: "setVolume", args: [70] },
+        { event: "command", func: "playVideo", args: [] },
+      ];
+
+      for (const c of cmds) {
+        iframe.contentWindow.postMessage(JSON.stringify({ ...c }), "*");
+      }
+
+      // Esconde o aviso após a interação
+      setNeedsTap(false);
+
+      // Remove listeners (1 toque só)
+      window.removeEventListener("pointerdown", tryEnableSound);
+      window.removeEventListener("touchstart", tryEnableSound);
+      window.removeEventListener("click", tryEnableSound);
+    };
+
+    // “Primeira interação” em qualquer lugar da página
+    window.addEventListener("pointerdown", tryEnableSound, { once: true });
+    window.addEventListener("touchstart", tryEnableSound, { once: true });
+    window.addEventListener("click", tryEnableSound, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", tryEnableSound);
+      window.removeEventListener("touchstart", tryEnableSound);
+      window.removeEventListener("click", tryEnableSound);
+    };
+  }, [enabled, youtubeId]);
+
+  if (!enabled || !youtubeId) return null;
+
+  // Autoplay mutado + loop
+  const src = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&loop=1&playlist=${youtubeId}&controls=0&playsinline=1&rel=0&modestbranding=1&enablejsapi=1`;
+
+  return (
+    <>
+      {/* iframe invisível (só áudio) */}
+      <iframe
+        ref={iframeRef}
+        title="Love365 Music"
+        src={src}
+        className="fixed -left-[9999px] -top-[9999px] w-[1px] h-[1px] opacity-0 pointer-events-none"
+        allow="autoplay; encrypted-media"
+      />
+
+      {/* aviso minimalista (some depois do 1º toque) */}
+      {needsTap && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full border border-white/10 bg-black/55 text-xs text-white/80 backdrop-blur-md">
+          Toque na tela para ativar a música
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ---------------- Hearts Overlay (scoped to hero) ---------------- */
+
+type HeartSpec = {
+  id: string;
+  leftPct: number;
+  sizePx: number;
+  durationSec: number;
+  negativeDelaySec: number;
+  driftPx: number;
+  opacity: number;
+};
+
+function rand(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
+function buildHearts(count: number): HeartSpec[] {
+  return Array.from({ length: count }).map((_, i) => {
+    const durationSec = rand(7, 13);
+    return {
+      id: `${Date.now()}-${i}-${Math.random().toString(16).slice(2)}`,
+      leftPct: rand(0, 100),
+      sizePx: rand(10, 18),
+      durationSec,
+      negativeDelaySec: -rand(0, durationSec),
+      driftPx: rand(-45, 45),
+      opacity: rand(0.35, 0.9),
+    };
+  });
+}
+
+function HeartsOverlayInHero({ enabled }: { enabled: boolean }) {
+  const [hearts, setHearts] = useState<HeartSpec[]>([]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setHearts([]);
+      return;
+    }
+    setHearts(buildHearts(55));
+  }, [enabled]);
+
+  if (!enabled) return null;
+
+  return (
+    <>
+      <style jsx global>{`
+        @keyframes love365-fall-hero {
+          0% {
+            transform: translate3d(var(--drift), -12vh, 0) rotate(0deg);
+            opacity: 0;
+          }
+          12% {
+            opacity: var(--op);
+          }
+          100% {
+            transform: translate3d(calc(var(--drift) * -1), 110vh, 0) rotate(360deg);
+            opacity: 0;
+          }
+        }
+      `}</style>
+
+      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+        {hearts.map((h) => (
+          <span
+            key={h.id}
+            className="absolute top-0 select-none"
+            style={
+              {
+                left: `${h.leftPct}%`,
+                fontSize: `${h.sizePx}px`,
+                animationName: "love365-fall-hero",
+                animationDuration: `${h.durationSec}s`,
+                animationTimingFunction: "linear",
+                animationIterationCount: "infinite",
+                animationDelay: `${h.negativeDelaySec}s`,
+                ["--drift" as any]: `${h.driftPx}px`,
+                ["--op" as any]: h.opacity,
+                color: "rgb(244,63,94)",
+                filter: "drop-shadow(0 0 6px rgba(244,63,94,0.35))",
+                willChange: "transform, opacity",
+              } as React.CSSProperties
+            }
+            aria-hidden="true"
+          >
+            ♥
+          </span>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Timer Tile (refined) ---------------- */
+
+function TimerTile({
   label,
   value,
   premium,
@@ -40,107 +250,17 @@ function TimeBox({
 }) {
   return (
     <div
-      className={`rounded-2xl px-3 py-3 text-center border ${
+      className={[
+        "rounded-2xl px-3 py-3 text-center backdrop-blur-md",
+        "border",
         premium
-          ? "border-rose-300/30 bg-rose-500/5 shadow-[0_0_30px_rgba(244,63,94,0.18)]"
-          : "border-rose-300/15 bg-rose-500/5 shadow-[0_14px_45px_rgba(0,0,0,0.45)]"
-      }`}
+          ? "border-rose-300/25 bg-white/12 shadow-[0_0_30px_rgba(244,63,94,0.10)]"
+          : "border-white/10 bg-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.45)]",
+      ].join(" ")}
     >
-      <div className="text-xs text-white/70 tracking-widest">{label}</div>
-      <div className="text-lg font-semibold tabular-nums text-white">{value}</div>
+      <div className="text-[10px] text-white/65 tracking-[0.25em] uppercase">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-white">{value}</div>
     </div>
-  );
-}
-
-/* ---------------- Hearts Overlay via DOM/CSS ---------------- */
-
-type HeartSpec = {
-  id: string;
-  leftPct: number;
-  sizePx: number;
-  durationSec: number;
-  delaySec: number;
-  driftPx: number;
-  opacity: number;
-};
-
-function rand(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
-
-function makeHearts(count: number): HeartSpec[] {
-  return Array.from({ length: count }).map((_, i) => ({
-    id: `${Date.now()}-${i}-${Math.random().toString(16).slice(2)}`,
-    leftPct: rand(0, 100),
-    sizePx: rand(10, 18),
-    durationSec: rand(6, 12),
-    delaySec: rand(0, 4),
-    driftPx: rand(-40, 40),
-    opacity: rand(0.35, 0.9),
-  }));
-}
-
-function HeartsOverlay({ enabled }: { enabled: boolean }) {
-  const [hearts, setHearts] = useState<HeartSpec[]>([]);
-
-  useEffect(() => {
-    if (!enabled) {
-      setHearts([]);
-      return;
-    }
-    // 50 corações simultâneos (ajuste se quiser mais/menos)
-    setHearts(makeHearts(50));
-
-    // re-randomiza de tempos em tempos para variar
-    const id = setInterval(() => setHearts(makeHearts(50)), 12000);
-    return () => clearInterval(id);
-  }, [enabled]);
-
-  if (!enabled) return null;
-
-  return (
-    <>
-      {/* CSS local para animação */}
-      <style jsx global>{`
-        @keyframes love365-fall {
-          0% {
-            transform: translate3d(var(--drift), -12vh, 0) rotate(0deg);
-            opacity: 0;
-          }
-          10% {
-            opacity: var(--op);
-          }
-          100% {
-            transform: translate3d(calc(var(--drift) * -1), 110vh, 0) rotate(360deg);
-            opacity: 0;
-          }
-        }
-      `}</style>
-
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        {hearts.map((h) => (
-          <span
-            key={h.id}
-            className="absolute top-0 select-none"
-            style={
-              {
-                left: `${h.leftPct}%`,
-                fontSize: `${h.sizePx}px`,
-                animation: `love365-fall ${h.durationSec}s linear ${h.delaySec}s infinite`,
-                // variáveis CSS usadas no keyframe
-                ["--drift" as any]: `${h.driftPx}px`,
-                ["--op" as any]: h.opacity,
-                color: "rgb(244,63,94)",
-                filter: "drop-shadow(0 0 6px rgba(244,63,94,0.35))",
-              } as React.CSSProperties
-            }
-            aria-hidden="true"
-          >
-            ♥
-          </span>
-        ))}
-      </div>
-    </>
   );
 }
 
@@ -157,7 +277,7 @@ export default function PublicCouplePage() {
 
   const [now, setNow] = useState(() => new Date());
 
-  // baralho
+  // carrossel
   const [index, setIndex] = useState(0);
   const touchStartX = useRef<number | null>(null);
 
@@ -208,6 +328,8 @@ export default function PublicCouplePage() {
   const photos = data?.photos ?? [];
   const total = photos.length;
 
+  const ytId = useMemo(() => extractYouTubeId(data?.yt ?? null), [data?.yt]);
+
   const startDate = useMemo(() => {
     const s = data?.startDate || "";
     const d = new Date(s ? s + "T00:00:00" : Date.now());
@@ -216,7 +338,6 @@ export default function PublicCouplePage() {
 
   const time = useMemo(() => diffParts(startDate, now), [startDate, now]);
 
-  // autoplay do carrossel
   useEffect(() => {
     if (total <= 1) return;
     const id = setInterval(() => setIndex((i) => (i + 1) % total), 3000);
@@ -240,7 +361,7 @@ export default function PublicCouplePage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#0B0B10] text-white">
+      <main className="min-h-[100svh] flex items-center justify-center bg-[#0B0B10] text-white">
         <p className="text-sm text-white/70">Carregando…</p>
       </main>
     );
@@ -248,7 +369,7 @@ export default function PublicCouplePage() {
 
   if (!data) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#0B0B10] text-white">
+      <main className="min-h-[100svh] flex items-center justify-center bg-[#0B0B10] text-white">
         <div className="text-center px-4">
           <h1 className="text-xl font-semibold">Página não encontrada</h1>
           <p className="mt-2 text-sm text-white/70">{apiError}</p>
@@ -257,116 +378,81 @@ export default function PublicCouplePage() {
     );
   }
 
-  const roseCard =
-    "rounded-3xl border border-rose-300/15 bg-rose-500/5 shadow-[0_18px_60px_rgba(0,0,0,0.45)]";
+  const currentPhoto = total > 0 ? photos[index] : null;
 
   return (
-    <main className="min-h-screen text-white bg-[#0B0B10]">
-      {/* Corações: PREMIUM */}
-      <HeartsOverlay enabled={premium} />
+    <main className="bg-[#0B0B10] text-white min-h-[100svh]">
+      {/* Música: SOMENTE Premium e somente se tiver ID/link válido */}
+      <YouTubeBackgroundAudio enabled={premium && !!ytId} youtubeId={ytId} />
 
-      <div className="relative z-10 mx-auto max-w-xl px-4 py-10">
-        {/* Debug discreto */}
-        <div className="fixed bottom-3 right-3 z-50 rounded-full border border-white/10 bg-black/60 px-3 py-1 text-xs text-white/70">
-          plan: <span className="text-white">{data.plan}</span>
-        </div>
-
-        <div className="flex min-h-[calc(100vh-80px)] flex-col items-center justify-center gap-6">
-          <header className="text-center">
-            <h1 className="text-4xl font-semibold tracking-tight">{data.names}</h1>
-            <p className="mt-2 text-sm text-white/70">
-              Juntos desde {startDate.toLocaleDateString("pt-BR")}
-            </p>
-          </header>
-
-          {/* Fotos (baralho) */}
-          <section
-            className={`relative w-full max-w-md h-80 rounded-3xl overflow-hidden border ${
-              premium
-                ? "border-rose-300/30 shadow-[0_0_55px_rgba(244,63,94,0.22)]"
-                : "border-rose-300/15 shadow-[0_14px_45px_rgba(0,0,0,0.45)]"
-            } bg-rose-500/5`}
-            onTouchStart={onTouchStart}
-            onTouchEnd={onTouchEnd}
-          >
-            {total === 0 ? (
-              <div className="h-full w-full flex items-center justify-center text-sm text-white/70">
-                Sem fotos
-              </div>
-            ) : (
-              photos.map((src, i) => {
-                const pos = (i - index + total) % total;
-                if (pos > 2) return null;
-
-                return (
-                  <div
-                    key={i}
-                    className="absolute inset-0 transition-all duration-500 p-3"
-                    style={{
-                      transform: `translate(${pos * 14}px, ${pos * 10}px) scale(${1 - pos * 0.06}) rotate(${
-                        pos === 0 ? 0 : pos === 1 ? -3 : 3
-                      }deg)`,
-                      zIndex: 10 - pos,
-                      opacity: 1 - pos * 0.25,
-                    }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={src}
-                      alt={`Foto ${i + 1}`}
-                      className="h-full w-full rounded-2xl object-cover"
-                      draggable={false}
-                    />
-                  </div>
-                );
-              })
-            )}
-
-            {total > 1 && (
-              <>
-                <button
-                  onClick={prev}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10"
-                  aria-label="Anterior"
-                >
-                  ‹
-                </button>
-                <button
-                  onClick={next}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10"
-                  aria-label="Próxima"
-                >
-                  ›
-                </button>
-
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs bg-black/65 text-white border border-white/10">
-                  {index + 1}/{total}
+      <div className="mx-auto w-full max-w-xl sm:px-4 sm:py-10">
+        <div className="relative sm:rounded-[36px] sm:border sm:border-white/10 sm:bg-white/5 sm:shadow-[0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden">
+          <section className="relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+            <div className="relative h-[100svh] sm:h-[560px] overflow-hidden">
+              {currentPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={currentPhoto}
+                  alt="Foto do casal"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  draggable={false}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-white/70 bg-white/5">
+                  Sem fotos
                 </div>
-              </>
-            )}
-          </section>
+              )}
 
-          {/* Timer abaixo das fotos */}
-          <section className={`${roseCard} w-full max-w-md p-5`}>
-            <h2 className="text-sm font-semibold mb-3 text-center tracking-widest text-white/90">
-              TEMPO JUNTOS
-            </h2>
-            <div className="grid grid-cols-4 gap-2">
-              <TimeBox label="DIAS" value={time.days} premium={premium} />
-              <TimeBox label="HORAS" value={pad2(time.hours)} premium={premium} />
-              <TimeBox label="MIN" value={pad2(time.mins)} premium={premium} />
-              <TimeBox label="SEG" value={pad2(time.secs)} premium={premium} />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/20 to-black/75 z-[1]" />
+
+              <HeartsOverlayInHero enabled={premium} />
+
+              {total > 1 && (
+                <>
+                  <button
+                    onClick={prev}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10 z-20"
+                    aria-label="Anterior"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    onClick={next}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 text-white border border-white/10 z-20"
+                    aria-label="Próxima"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
+
+              <div className="absolute inset-x-0 top-0 pt-14 sm:pt-12 px-6 z-20 text-center">
+                <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight drop-shadow-[0_10px_30px_rgba(0,0,0,0.55)]">
+                  {data.names}
+                </h1>
+              </div>
+
+              <div className="absolute inset-x-0 bottom-0 pb-9 sm:pb-10 px-6 z-20">
+                <div className="mx-auto max-w-md">
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <TimerTile label="ANOS" value={Math.floor(time.days / 365)} premium={premium} />
+                    <TimerTile label="MESES" value={Math.floor((time.days % 365) / 30)} premium={premium} />
+                    <TimerTile label="DIAS" value={time.days} premium={premium} />
+
+                    <TimerTile label="HORAS" value={pad2(time.hours)} premium={premium} />
+                    <TimerTile label="MINUTOS" value={pad2(time.mins)} premium={premium} />
+                    <TimerTile label="SEGUNDOS" value={pad2(time.secs)} premium={premium} />
+                  </div>
+
+                  {total > 1 && (
+                    <div className="mt-3 text-center text-xs text-white/60">
+                      {index + 1}/{total}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
-
-          {/* Texto com quebra forçada */}
-          {data.message && data.message.trim() && (
-            <section className={`${roseCard} w-full max-w-md p-5 text-center`}>
-              <p className="text-sm text-white/90 whitespace-pre-wrap break-words break-all">
-                {data.message}
-              </p>
-            </section>
-          )}
         </div>
       </div>
     </main>
