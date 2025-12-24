@@ -3,32 +3,39 @@ import { connectToDatabase, Page } from "@/lib/db";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const token = url.pathname.split("/").pop();
+export async function GET(request: Request, { params }: { params: { token: string } }) {
+  const token = params.token;
 
   if (!token) return NextResponse.json({ error: "Token inválido." }, { status: 400 });
 
   try {
     await connectToDatabase();
-    // Use .lean() para performance, mas garanta que o schema tenha os campos certos
     const page = await Page.findOne({ token }).lean();
 
     if (!page) {
       return NextResponse.json({ error: "Página não encontrada." }, { status: 404 });
     }
 
-    // AJUSTE AQUI: Mapeando os campos do MongoDB para o que o seu frontend espera
+    // Retornamos os dados mapeados para os nomes que seu frontend usa
     return NextResponse.json({
       token: page.token,
       plan: page.plan,
       names: page.names,
-      startDate: page.date, 
-      // Verificamos se photoUrls existe (array) caso contrário usamos o antigo photoUrl
-      photos: page.photoUrls || (page.photoUrl ? [page.photoUrl] : []), 
-      yt: page.music,
+      date: page.date,          // Campo novo
+      startDate: page.date,     // Compatibilidade antigo
+      photoUrls: page.photoUrls || [], 
+      photos: page.photoUrls || [],    // Compatibilidade antigo
+      youtubeUrl: page.youtubeUrl,     // Campo novo
+      yt: page.youtubeUrl,             // Compatibilidade antigo
       status: page.status,
-    }, { status: 200 });
+    }, { 
+      status: 200,
+      headers: { 
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      } 
+    });
 
   } catch (e: any) {
     console.error("Erro na busca da página:", e);

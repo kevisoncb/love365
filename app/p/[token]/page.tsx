@@ -9,9 +9,12 @@ type PageDTO = {
   token: string;
   plan: Plan;
   names: string;
-  date: string; // Ajustado: Antes era startDate
-  photoUrls: string[]; // Ajustado: Antes era photos
-  youtubeUrl?: string | null; // Ajustado: Antes era yt
+  date?: string; 
+  startDate?: string; // Compatibilidade antigo
+  photoUrls?: string[]; 
+  photos?: string[]; // Compatibilidade antigo
+  youtubeUrl?: string | null; 
+  yt?: string | null; // Compatibilidade antigo
   createdAt?: string;
   status?: string;
 };
@@ -30,7 +33,6 @@ function diffParts(from: Date, to: Date) {
     const lastMonth = new Date(to.getFullYear(), to.getMonth(), 0);
     days += lastMonth.getDate();
   }
-
   if (months < 0) {
     years--;
     months += 12;
@@ -180,7 +182,6 @@ export default function PublicCouplePage() {
   const ytIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [musicStarted, setMusicStarted] = useState(false);
 
-  // --- BUSCA DE DADOS COM AUTO-REFRESH (POLLING) ---
   useEffect(() => {
     if (token?.startsWith("preview") || searchParams.get("preview") === "true") {
       setData({
@@ -209,34 +210,23 @@ export default function PublicCouplePage() {
       try {
         const res = await fetch(`/api/pages/${token}`, { cache: "no-store" });
         const json = await res.json();
-
         if (!alive) return;
-
         if (!res.ok) {
           setApiError(json?.error || "Erro ao buscar página");
           setLoading(false);
           return;
         }
-
         setData(json);
         setLoading(false);
-
         if (json.status !== "APPROVED") {
           timeoutId = setTimeout(checkStatus, 5000);
         }
       } catch (err) {
-        if (alive) {
-          timeoutId = setTimeout(checkStatus, 10000);
-        }
+        if (alive) timeoutId = setTimeout(checkStatus, 10000);
       }
     }
-
     checkStatus();
-
-    return () => { 
-      alive = false; 
-      clearTimeout(timeoutId); 
-    };
+    return () => { alive = false; clearTimeout(timeoutId); };
   }, [token, searchParams]);
 
   useEffect(() => {
@@ -244,16 +234,17 @@ export default function PublicCouplePage() {
     return () => clearInterval(t);
   }, []);
 
+  // --- LÓGICA DE COMPATIBILIDADE ---
   const premium = data?.plan === "PREMIUM";
-  const photos = data?.photoUrls ?? []; // Ajustado para photoUrls
-  const total = photos.length;
-
+  const photos = useMemo(() => data?.photoUrls || data?.photos || [], [data]);
+  const finalYoutubeUrl = useMemo(() => data?.youtubeUrl || data?.yt || null, [data]);
   const startDate = useMemo(() => {
-    const s = data?.date || ""; // Ajustado para date
+    const s = data?.date || data?.startDate || ""; 
     const d = new Date(s ? s + "T00:00:00" : Date.now());
     return isNaN(d.getTime()) ? new Date() : d;
-  }, [data?.date]);
+  }, [data]);
 
+  const total = photos.length;
   const time = useMemo(() => diffParts(startDate, now), [startDate, now]);
 
   useEffect(() => {
@@ -275,8 +266,8 @@ export default function PublicCouplePage() {
   }
 
   function tryStartMusic() {
-    if (!premium || !data?.youtubeUrl || musicStarted) return; // Ajustado para youtubeUrl
-    const id = extractYouTubeId(data.youtubeUrl);
+    if (!premium || !finalYoutubeUrl || musicStarted) return; 
+    const id = extractYouTubeId(finalYoutubeUrl);
     if (!id || !ytIframeRef.current?.contentWindow) return;
     const post = (msg: any) => ytIframeRef.current!.contentWindow!.postMessage(JSON.stringify(msg), "*");
     post({ event: "command", func: "setVolume", args: [100] });
@@ -292,17 +283,13 @@ export default function PublicCouplePage() {
       <main className="min-h-[100svh] flex flex-col items-center justify-center bg-[#FDFCFB] text-center p-6">
         <div className="animate-bounce mb-4 text-5xl">❤️</div>
         <h1 className="text-2xl font-bold text-red-600 mb-2">Quase lá!</h1>
-        <p className="text-gray-500 max-w-xs">Estamos aguardando a confirmação do seu pagamento. Assim que for aprovado, esta página abrirá sozinha!</p>
-        <div className="mt-8 flex items-center gap-2 text-sm text-gray-400">
-          <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
-          Verificando status...
-        </div>
+        <p className="text-gray-500 max-w-xs">Estamos aguardando a confirmação do seu pagamento...</p>
       </main>
     );
   }
 
   const currentPhoto = total > 0 ? photos[index] : null;
-  const ytId = premium && data.youtubeUrl ? extractYouTubeId(data.youtubeUrl) : null; // Ajustado para youtubeUrl
+  const ytId = premium && finalYoutubeUrl ? extractYouTubeId(finalYoutubeUrl) : null;
 
   return (
     <main className="bg-[#FDFCFB] min-h-[100svh]">
