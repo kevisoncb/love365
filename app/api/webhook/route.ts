@@ -3,50 +3,49 @@ import { connectToDatabase, Page } from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
-    // 1. Conectar ao Banco de Dados
     await connectToDatabase();
-
     const body = await req.json();
 
-    // No AbacatePay, o evento de pagamento confirmado costuma ser 'billing.paid'
-    // Mas vamos checar tanto o campo 'event' quanto o 'data.status' para garantir
+    // Log para você debugar na Vercel se necessário
+    console.log("📦 Webhook Body:", JSON.stringify(body));
+
     const event = body.event;
-    const status = body.data?.status;
+    const status = body.data?.status; // Ex: "confirmed"
     
-    // O token que enviamos está dentro de metadata ou products
-    // Pegando do local onde a API do AbacatePay costuma enviar
-    const products = body.data?.products || [];
+    // CORREÇÃO AQUI: O caminho correto no AbacatePay é data -> billing -> products
+    const billing = body.data?.billing;
+    const products = billing?.products || body.data?.products || [];
     const token = products[0]?.externalId;
 
     console.log(`[Webhook] Evento: ${event} | Status: ${status} | Token: ${token}`);
 
-    // Se o evento for de pagamento confirmado ou o status for PAID
-    if (event === "billing.paid" || status === "PAID" || status === "CONFIRMED") {
-      
+    // AbacatePay envia 'confirmed' quando o Pix é pago
+    const isPaid = event === "billing.paid" || status === "confirmed" || status === "PAID";
+
+    if (isPaid) {
       if (!token) {
-        console.error("❌ Webhook recebido, mas token (externalId) não encontrado.");
-        return NextResponse.json({ error: "Token não encontrado" }, { status: 400 });
+        console.error("❌ Token não encontrado no JSON do AbacatePay");
+        return NextResponse.json({ error: "Token ausente" }, { status: 400 });
       }
 
-      // 2. Atualizar o status no MongoDB de PENDING para APPROVED
       const updatedPage = await Page.findOneAndUpdate(
         { token: token },
         { status: "APPROVED" },
-        { new: true } // Retorna o documento atualizado no log
+        { new: true }
       );
 
       if (updatedPage) {
-        console.log(`✅ Página ${token} APROVADA no banco de dados!`);
-        return NextResponse.json({ message: "Status atualizado para APPROVED" });
+        console.log(`✅ Página ${token} APROVADA!`);
+        return NextResponse.json({ message: "APPROVED" });
       } else {
-        console.error(`⚠️ Página com token ${token} não encontrada no banco.`);
+        console.error(`⚠️ Token ${token} não existe no MongoDB.`);
         return NextResponse.json({ error: "Página não encontrada" }, { status: 404 });
       }
     }
 
-    return NextResponse.json({ message: "Webhook recebido, mas não era um evento de pagamento." });
+    return NextResponse.json({ message: "Evento ignorado" });
   } catch (error: any) {
     console.error("❌ Erro no Webhook:", error.message);
-    return NextResponse.json({ error: "Erro interno", details: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

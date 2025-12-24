@@ -18,8 +18,8 @@ export async function POST(req: Request) {
     const names = String(form.get("names") || "").trim();
     const startDate = String(form.get("startDate") || "").trim();
     
-    // CAPTURA DA MÚSICA: Pegamos o campo 'music' que vem do formulário
-    const musicField = String(form.get("music") || "").trim();
+    // BUSCA A CHAVE CORRETA QUE VEM DO FRONTEND ("yt")
+    const musicField = String(form.get("yt") || "").trim();
     
     const email = String(form.get("email") || form.get("contact") || "").trim();
     const whatsapp = String(form.get("whatsapp") || "").trim();
