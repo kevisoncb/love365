@@ -3,30 +3,36 @@ import { connectToDatabase, Page } from "@/lib/db";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request, { params }: { params: { token: string } }) {
-  const token = params.token;
-
-  if (!token) return NextResponse.json({ error: "Token inválido." }, { status: 400 });
-
+// No Next.js 15, params precisa ser tratado como Promise
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
   try {
+    // 1. Aguarda o recebimento do token (correção para Next.js 15)
+    const { token } = await params;
+
+    if (!token) {
+      return NextResponse.json({ error: "Token inválido." }, { status: 400 });
+    }
+
     await connectToDatabase();
+    
+    // 2. Busca no banco
     const page = await Page.findOne({ token }).lean();
 
     if (!page) {
       return NextResponse.json({ error: "Página não encontrada." }, { status: 404 });
     }
 
-    // Retornamos os dados mapeados para os nomes que seu frontend usa
+    // 3. Retorna os dados com mapeamento de nomes (mantendo compatibilidade)
     return NextResponse.json({
       token: page.token,
       plan: page.plan,
       names: page.names,
-      date: page.date,          // Campo novo
-      startDate: page.date,     // Compatibilidade antigo
+      date: page.date,          
+      startDate: page.date,     
       photoUrls: page.photoUrls || [], 
-      photos: page.photoUrls || [],    // Compatibilidade antigo
-      youtubeUrl: page.youtubeUrl,     // Campo novo
-      yt: page.youtubeUrl,             // Compatibilidade antigo
+      photos: page.photoUrls || [],    
+      youtubeUrl: page.youtubeUrl,     
+      yt: page.youtubeUrl,             
       status: page.status,
     }, { 
       status: 200,
