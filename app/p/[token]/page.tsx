@@ -10,11 +10,11 @@ type PageDTO = {
   plan: Plan;
   names: string;
   date?: string; 
-  startDate?: string; // Compatibilidade antigo
+  startDate?: string; // Antigo
   photoUrls?: string[]; 
-  photos?: string[]; // Compatibilidade antigo
+  photos?: string[]; // Antigo
   youtubeUrl?: string | null; 
-  yt?: string | null; // Compatibilidade antigo
+  yt?: string | null; // Antigo
   createdAt?: string;
   status?: string;
 };
@@ -171,7 +171,12 @@ function TimerTile({ label, value, premium }: { label: string; value: number | s
 export default function PublicCouplePage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const token = (Array.isArray(params?.token) ? params.token[0] : params?.token) as string | undefined;
+  
+  // Captura robusta do token
+  const token = useMemo(() => {
+     if (!params?.token) return undefined;
+     return Array.isArray(params.token) ? params.token[0] : params.token;
+  }, [params?.token]);
 
   const [data, setData] = useState<PageDTO | null>(null);
   const [loading, setLoading] = useState(true);
@@ -199,7 +204,6 @@ export default function PublicCouplePage() {
 
     if (!token) {
       setLoading(false);
-      setApiError("Token ausente.");
       return;
     }
 
@@ -234,13 +238,25 @@ export default function PublicCouplePage() {
     return () => clearInterval(t);
   }, []);
 
-  // --- LÓGICA DE COMPATIBILIDADE ---
+  // --- LÓGICA DE COMPATIBILIDADE CORRIGIDA ---
   const premium = data?.plan === "PREMIUM";
-  const photos = useMemo(() => data?.photoUrls || data?.photos || [], [data]);
-  const finalYoutubeUrl = useMemo(() => data?.youtubeUrl || data?.yt || null, [data]);
+  
+  // Garante que fotos apareçam independente do nome no banco
+  const photos = useMemo(() => {
+    return data?.photoUrls || (data as any)?.photos || [];
+  }, [data]);
+
+  // Garante que a música funcione independente do nome no banco
+  const finalYoutubeUrl = useMemo(() => {
+    return data?.youtubeUrl || (data as any)?.yt || null;
+  }, [data]);
+
+  // FIX DA DATA: Impede que o contador fique zerado (Anos 0, Meses 0)
   const startDate = useMemo(() => {
-    const s = data?.date || data?.startDate || ""; 
-    const d = new Date(s ? s + "T00:00:00" : Date.now());
+    const s = data?.date || (data as any)?.startDate || ""; 
+    if (!s) return new Date();
+    // Resolve problemas de parsing em diferentes navegadores substituindo '-' por '/'
+    const d = new Date(s.replace(/-/g, '/').split('T')[0] + "T00:00:00");
     return isNaN(d.getTime()) ? new Date() : d;
   }, [data]);
 
