@@ -1,41 +1,37 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import fs from "fs/promises";
+import { connectToDatabase, Page } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  // Extrai o token diretamente da URL
   const url = new URL(request.url);
   const token = url.pathname.split("/").pop();
 
-  if (!token) {
-    return NextResponse.json(
-      { error: "Token inválido." },
-      { status: 400 }
-    );
-  }
-
-  const filePath = path.join(process.cwd(), "data", `page-${token}.json`);
+  if (!token) return NextResponse.json({ error: "Token inválido." }, { status: 400 });
 
   try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    const page = JSON.parse(raw);
+    await connectToDatabase();
+    // Use .lean() para performance, mas garanta que o schema tenha os campos certos
+    const page = await Page.findOne({ token }).lean();
 
-    delete page.contact;
+    if (!page) {
+      return NextResponse.json({ error: "Página não encontrada." }, { status: 404 });
+    }
 
-    return NextResponse.json(page, { status: 200 });
+    // AJUSTE AQUI: Mapeando os campos do MongoDB para o que o seu frontend espera
+    return NextResponse.json({
+      token: page.token,
+      plan: page.plan,
+      names: page.names,
+      startDate: page.date, 
+      // Verificamos se photoUrls existe (array) caso contrário usamos o antigo photoUrl
+      photos: page.photoUrls || (page.photoUrl ? [page.photoUrl] : []), 
+      yt: page.music,
+      status: page.status,
+    }, { status: 200 });
+
   } catch (e: any) {
-    return NextResponse.json(
-      {
-        error: "Página não encontrada.",
-        debug: {
-          token,
-          attemptedPath: filePath,
-          code: e?.code ?? null,
-        },
-      },
-      { status: 404 }
-    );
+    console.error("Erro na busca da página:", e);
+    return NextResponse.json({ error: "Erro interno." }, { status: 500 });
   }
 }

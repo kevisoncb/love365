@@ -180,6 +180,7 @@ export default function PublicCouplePage() {
   const ytIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [musicStarted, setMusicStarted] = useState(false);
 
+  // --- BUSCA DE DADOS COM AUTO-REFRESH (POLLING) ---
   useEffect(() => {
     if (token?.startsWith("preview") || searchParams.get("preview") === "true") {
       setData({
@@ -202,24 +203,42 @@ export default function PublicCouplePage() {
     }
 
     let alive = true;
-    (async () => {
+    let timeoutId: NodeJS.Timeout;
+
+    async function checkStatus() {
       try {
         const res = await fetch(`/api/pages/${token}`, { cache: "no-store" });
-        const json = await res.json().catch(() => ({}));
+        const json = await res.json();
+
         if (!alive) return;
+
         if (!res.ok) {
-          setData(null);
           setApiError(json?.error || "Erro ao buscar página");
+          setLoading(false);
           return;
         }
-        setData(json as PageDTO);
-      } catch {
-        if (alive) setApiError("Falha ao carregar página");
-      } finally {
-        if (alive) setLoading(false);
+
+        setData(json);
+        setLoading(false);
+
+        // Se o status NÃO for APPROVED, tenta de novo em 5 segundos
+        if (json.status !== "APPROVED") {
+          timeoutId = setTimeout(checkStatus, 5000);
+        }
+      } catch (err) {
+        if (alive) {
+          // Em caso de erro de rede, tenta de novo em 10s
+          timeoutId = setTimeout(checkStatus, 10000);
+        }
       }
-    })();
-    return () => { alive = false; };
+    }
+
+    checkStatus();
+
+    return () => { 
+      alive = false; 
+      clearTimeout(timeoutId); 
+    };
   }, [token, searchParams]);
 
   useEffect(() => {
@@ -270,12 +289,16 @@ export default function PublicCouplePage() {
 
   if (loading) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-red-600 font-bold">Carregando...</main>;
   
+  // --- TELA DE ESPERA COM POLLING ATIVO ---
   if (!data || (data.status !== "APPROVED" && data.token !== "preview")) {
     return (
-      <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-center p-6">
-        <div>
-          <h1 className="text-2xl font-bold text-red-600 mb-2">Quase lá! ❤️</h1>
-          <p className="text-gray-500">Aguardando confirmação do pagamento para liberar seu link.</p>
+      <main className="min-h-[100svh] flex flex-col items-center justify-center bg-[#FDFCFB] text-center p-6">
+        <div className="animate-bounce mb-4 text-5xl">❤️</div>
+        <h1 className="text-2xl font-bold text-red-600 mb-2">Quase lá!</h1>
+        <p className="text-gray-500 max-w-xs">Estamos aguardando a confirmação do seu pagamento. Assim que for aprovado, esta página abrirá sozinha!</p>
+        <div className="mt-8 flex items-center gap-2 text-sm text-gray-400">
+          <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+          Verificando status...
         </div>
       </main>
     );
@@ -304,7 +327,7 @@ export default function PublicCouplePage() {
                   <img src={currentPhoto} alt="Foto" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-gray-50 text-gray-300 text-[10px] uppercase tracking-widest text-center px-4">
-                    Sua foto aparecerá aqui no modo oficial
+                    Sua foto aparecerá aqui
                   </div>
                 )}
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80 z-[1]" />

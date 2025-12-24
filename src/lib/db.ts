@@ -8,7 +8,6 @@ if (!MONGODB_URI) {
 
 export const connectToDatabase = async () => {
   if (mongoose.connection.readyState >= 1) return;
-  
   try {
     await mongoose.connect(MONGODB_URI);
     console.log("🚀 MongoDB Conectado");
@@ -17,16 +16,17 @@ export const connectToDatabase = async () => {
   }
 };
 
-// Definindo o Schema da Página do Casal
 const PageSchema = new mongoose.Schema({
   token: { type: String, required: true, unique: true },
+  plan: { type: String, required: true }, // Faltava este
   names: { type: String, required: true },
   date: { type: String, required: true },
   music: { type: String },
-  photoUrl: { type: String },
-  status: { type: String, default: "PENDING" }, // PENDING ou APPROVED
+  message: { type: String }, // Faltava este
+  photoUrls: [{ type: String }], // Use sempre plural para array
+  contact: { type: String }, // Faltava este
+  status: { type: String, default: "PENDING" },
   createdAt: { type: Date, default: Date.now },
 });
 
-// Exporta o modelo
 export const Page = mongoose.models.Page || mongoose.model("Page", PageSchema);

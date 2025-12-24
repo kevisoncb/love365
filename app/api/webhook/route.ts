@@ -1,42 +1,52 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { connectToDatabase, Page } from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
+    // 1. Conectar ao Banco de Dados
+    await connectToDatabase();
+
     const body = await req.json();
-    
-    // O AbacatePay envia o status no campo data.status ou similar
-    // Vamos capturar o status e o token (que enviamos no externalId do produto)
+
+    // No AbacatePay, o evento de pagamento confirmado costuma ser 'billing.paid'
+    // Mas vamos checar tanto o campo 'event' quanto o 'data.status' para garantir
+    const event = body.event;
     const status = body.data?.status;
-    const products = body.data?.billing?.products || [];
+    
+    // O token que enviamos está dentro de metadata ou products
+    // Pegando do local onde a API do AbacatePay costuma enviar
+    const products = body.data?.products || [];
     const token = products[0]?.externalId;
 
-    console.log(`Recebido Webhook: Status ${status} para o Token ${token}`);
+    console.log(`[Webhook] Evento: ${event} | Status: ${status} | Token: ${token}`);
 
-    if (status === "PAID" || status === "CONFIRMED") {
-      if (!token) return NextResponse.json({ error: "Token não encontrado" }, { status: 400 });
+    // Se o evento for de pagamento confirmado ou o status for PAID
+    if (event === "billing.paid" || status === "PAID" || status === "CONFIRMED") {
+      
+      if (!token) {
+        console.error("❌ Webhook recebido, mas token (externalId) não encontrado.");
+        return NextResponse.json({ error: "Token não encontrado" }, { status: 400 });
+      }
 
-      const filePath = path.join(process.cwd(), "data", `${token}.json`);
+      // 2. Atualizar o status no MongoDB de PENDING para APPROVED
+      const updatedPage = await Page.findOneAndUpdate(
+        { token: token },
+        { status: "APPROVED" },
+        { new: true } // Retorna o documento atualizado no log
+      );
 
-      if (fs.existsSync(filePath)) {
-        // 1. Ler o arquivo atual
-        const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-
-        // 2. Atualizar o status
-        fileData.status = "APPROVED";
-
-        // 3. Salvar de volta
-        fs.writeFileSync(filePath, JSON.stringify(fileData, null, 2));
-        
-        console.log(`Página ${token} aprovada com sucesso!`);
-        return NextResponse.json({ message: "Status atualizado" });
+      if (updatedPage) {
+        console.log(`✅ Página ${token} APROVADA no banco de dados!`);
+        return NextResponse.json({ message: "Status atualizado para APPROVED" });
+      } else {
+        console.error(`⚠️ Página com token ${token} não encontrada no banco.`);
+        return NextResponse.json({ error: "Página não encontrada" }, { status: 404 });
       }
     }
 
-    return NextResponse.json({ message: "Webhook processado" });
-  } catch (error) {
-    console.error("Erro no Webhook:", error);
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+    return NextResponse.json({ message: "Webhook recebido, mas não era um evento de pagamento." });
+  } catch (error: any) {
+    console.error("❌ Erro no Webhook:", error.message);
+    return NextResponse.json({ error: "Erro interno", details: error.message }, { status: 500 });
   }
 }

@@ -65,9 +65,18 @@ export default function CreatePage() {
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [now, setNow] = useState(new Date());
+  
+  // Estado para os corações da animação (Evita Erro de Hidratação)
+  const [hearts, setHearts] = useState<{left: string, delay: string}[]>([]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
+    // Gerar corações apenas no cliente
+    const generatedHearts = [...Array(8)].map(() => ({
+      left: `${Math.random() * 90}%`,
+      delay: `${Math.random() * 5}s`,
+    }));
+    setHearts(generatedHearts);
     return () => clearInterval(t);
   }, []);
 
@@ -96,8 +105,48 @@ export default function CreatePage() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+
     setSubmitting(true);
-    setSubmitting(false);
+
+    try {
+      const formData = new FormData();
+      formData.append("plan", plan);
+      formData.append("names", names);
+      formData.append("startDate", startDate);
+      formData.append("yt", yt);
+      formData.append("whatsapp", whatsapp);
+      formData.append("email", email);
+      
+      photos.forEach((file) => {
+        formData.append("photos", file);
+      });
+
+      const response = await fetch("/api/create-page", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erro ao criar página");
+      }
+
+      // NOVO: Se houver URL de pagamento (AbacatePay), redireciona para lá
+      if (data.paymentUrl) {
+        window.location.href = data.paymentUrl;
+      } else {
+        // Fallback caso não tenha pagamento
+        window.location.href = data.publicUrl;
+      }
+
+    } catch (err: any) {
+      alert("Ops! " + err.message);
+      console.error("Erro no envio:", err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const cardStyle = "bg-white rounded-[2rem] p-8 shadow-[0_10px_40px_rgb(0,0,0,0.06)] border border-zinc-100 mb-6";
@@ -155,7 +204,6 @@ export default function CreatePage() {
                   {photoPreviews.map((src, i) => (
                     <div key={i} className="relative aspect-square rounded-xl overflow-hidden shadow-sm group border border-zinc-100">
                       <img src={src} className="h-full w-full object-cover" alt="preview" />
-                      {/* Efeito de hover alterado para branco suave (bg-white/20) e texto cinza escuro */}
                       <button type="button" onClick={() => removePhoto(i)} className="absolute inset-0 bg-white/40 opacity-0 group-hover:opacity-100 text-zinc-800 font-bold transition-all flex items-center justify-center backdrop-blur-[1px]">Remover</button>
                     </div>
                   ))}
@@ -187,8 +235,14 @@ export default function CreatePage() {
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-5 bg-zinc-900 rounded-b-2xl z-50"></div>
               
               <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
-                {[...Array(8)].map((_, i) => (
-                  <div key={i} className="absolute text-pink-500/40 animate-fall text-lg" style={{ left: `${Math.random() * 90}%`, animationDelay: `${Math.random() * 5}s` }}>❤️</div>
+                {hearts.map((heart, i) => (
+                  <div 
+                    key={i} 
+                    className="absolute text-pink-500/40 animate-fall text-lg" 
+                    style={{ left: heart.left, animationDelay: heart.delay }}
+                  >
+                    ❤️
+                  </div>
                 ))}
               </div>
 
