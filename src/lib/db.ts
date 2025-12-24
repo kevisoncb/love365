@@ -18,13 +18,13 @@ export const connectToDatabase = async () => {
 
 const PageSchema = new mongoose.Schema({
   token: { type: String, required: true, unique: true },
-  plan: { type: String, required: true }, // Faltava este
+  plan: { type: String, required: true },
   names: { type: String, required: true },
   date: { type: String, required: true },
-  music: { type: String },
-  message: { type: String }, // Faltava este
-  photoUrls: [{ type: String }], // Use sempre plural para array
-  contact: { type: String }, // Faltava este
+  youtubeUrl: { type: String }, // Mudamos de 'music' para 'youtubeUrl'
+  message: { type: String },
+  photoUrls: [{ type: String }],
+  contact: { type: String },
   status: { type: String, default: "PENDING" },
   createdAt: { type: Date, default: Date.now },
 });

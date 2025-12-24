@@ -9,9 +9,9 @@ type PageDTO = {
   token: string;
   plan: Plan;
   names: string;
-  startDate: string;
-  photos: string[];
-  yt?: string | null;
+  date: string; // Ajustado: Antes era startDate
+  photoUrls: string[]; // Ajustado: Antes era photos
+  youtubeUrl?: string | null; // Ajustado: Antes era yt
   createdAt?: string;
   status?: string;
 };
@@ -187,9 +187,9 @@ export default function PublicCouplePage() {
         token: "preview",
         plan: (searchParams.get("plan") as Plan) || "BASIC",
         names: searchParams.get("names") || "Exemplo Casal",
-        startDate: searchParams.get("date") || "2024-01-01",
-        photos: [], 
-        yt: searchParams.get("yt"),
+        date: searchParams.get("date") || "2024-01-01",
+        photoUrls: [], 
+        youtubeUrl: searchParams.get("yt"),
         status: "APPROVED"
       });
       setLoading(false);
@@ -221,13 +221,11 @@ export default function PublicCouplePage() {
         setData(json);
         setLoading(false);
 
-        // Se o status NÃO for APPROVED, tenta de novo em 5 segundos
         if (json.status !== "APPROVED") {
           timeoutId = setTimeout(checkStatus, 5000);
         }
       } catch (err) {
         if (alive) {
-          // Em caso de erro de rede, tenta de novo em 10s
           timeoutId = setTimeout(checkStatus, 10000);
         }
       }
@@ -247,14 +245,14 @@ export default function PublicCouplePage() {
   }, []);
 
   const premium = data?.plan === "PREMIUM";
-  const photos = data?.photos ?? [];
+  const photos = data?.photoUrls ?? []; // Ajustado para photoUrls
   const total = photos.length;
 
   const startDate = useMemo(() => {
-    const s = data?.startDate || "";
+    const s = data?.date || ""; // Ajustado para date
     const d = new Date(s ? s + "T00:00:00" : Date.now());
     return isNaN(d.getTime()) ? new Date() : d;
-  }, [data?.startDate]);
+  }, [data?.date]);
 
   const time = useMemo(() => diffParts(startDate, now), [startDate, now]);
 
@@ -277,8 +275,8 @@ export default function PublicCouplePage() {
   }
 
   function tryStartMusic() {
-    if (!premium || !data?.yt || musicStarted) return;
-    const id = extractYouTubeId(data.yt);
+    if (!premium || !data?.youtubeUrl || musicStarted) return; // Ajustado para youtubeUrl
+    const id = extractYouTubeId(data.youtubeUrl);
     if (!id || !ytIframeRef.current?.contentWindow) return;
     const post = (msg: any) => ytIframeRef.current!.contentWindow!.postMessage(JSON.stringify(msg), "*");
     post({ event: "command", func: "setVolume", args: [100] });
@@ -289,7 +287,6 @@ export default function PublicCouplePage() {
 
   if (loading) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-red-600 font-bold">Carregando...</main>;
   
-  // --- TELA DE ESPERA COM POLLING ATIVO ---
   if (!data || (data.status !== "APPROVED" && data.token !== "preview")) {
     return (
       <main className="min-h-[100svh] flex flex-col items-center justify-center bg-[#FDFCFB] text-center p-6">
@@ -305,7 +302,7 @@ export default function PublicCouplePage() {
   }
 
   const currentPhoto = total > 0 ? photos[index] : null;
-  const ytId = premium && data.yt ? extractYouTubeId(data.yt) : null;
+  const ytId = premium && data.youtubeUrl ? extractYouTubeId(data.youtubeUrl) : null; // Ajustado para youtubeUrl
 
   return (
     <main className="bg-[#FDFCFB] min-h-[100svh]">

@@ -45,13 +45,13 @@ export async function POST(req: Request) {
       photoUrls.push(`${process.env.R2_PUBLIC_URL}/${filename}`);
     }
 
-    // 2. SALVA NO MONGODB (youtubeUrl é o campo do seu Schema)
+    // 2. SALVA NO MONGODB
     await Page.create({
       token,
       plan,
       names,
       date: startDate,
-      youtubeUrl: musicField, // AQUI SALVA A MÚSICA
+      youtubeUrl: musicField, // Agora este nome bate com o Schema acima
       photoUrls,
       status: "PENDING",
       contact: email || whatsapp
