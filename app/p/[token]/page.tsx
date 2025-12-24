@@ -251,13 +251,25 @@ export default function PublicCouplePage() {
     return data?.youtubeUrl || (data as any)?.yt || null;
   }, [data]);
 
-  // FIX DA DATA: Impede que o contador fique zerado (Anos 0, Meses 0)
+  // FIX DEFINITIVO DO CONTADOR:
   const startDate = useMemo(() => {
     const s = data?.date || (data as any)?.startDate || ""; 
     if (!s) return new Date();
-    // Resolve problemas de parsing em diferentes navegadores substituindo '-' por '/'
-    const d = new Date(s.replace(/-/g, '/').split('T')[0] + "T00:00:00");
-    return isNaN(d.getTime()) ? new Date() : d;
+
+    try {
+      // Pega apenas a parte YYYY-MM-DD ignorando qualquer resto
+      const datePart = s.split('T')[0]; 
+      const [year, month, day] = datePart.split('-').map(Number);
+
+      // Cria a data usando números (Ano, Mês-1, Dia)
+      // O mês no JavaScript começa em 0 (Janeiro = 0, Fevereiro = 1...)
+      const d = new Date(year, month - 1, day, 0, 0, 0);
+      
+      return isNaN(d.getTime()) ? new Date() : d;
+    } catch (e) {
+      console.error("Erro ao converter data:", e);
+      return new Date();
+    }
   }, [data]);
 
   const total = photos.length;
