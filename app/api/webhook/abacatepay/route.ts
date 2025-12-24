@@ -5,58 +5,57 @@ import { sendSuccessEmail } from "@/lib/mail-service";
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
-    
-    // 1. Captura o corpo da requisição
     const body = await req.json();
     
-    // LOG DE SEGURANÇA: Para você ver a estrutura real no console da Vercel
-    console.log(" [DEBUG] Payload Completo:", JSON.stringify(body));
+    console.log(" [DEBUG] Payload Recebido:", JSON.stringify(body));
 
-    // 2. Mapeamento de dados (AbacatePay envia dentro de .data)
     const eventData = body.data;
-    const status = eventData?.status || body.status; // Tenta pegar de dentro ou de fora
     
-    // Tenta pegar o token (externalId) de todos os lugares possíveis
+    // CAPTURA DO STATUS
+    const status = eventData?.status || body.status;
+
+    // CAPTURA DO TOKEN (Múltiplas tentativas para não vir undefined)
     const token = 
       eventData?.externalId || 
       eventData?.products?.[0]?.externalId || 
-      body.externalId;
+      body.externalId ||
+      (body.metadata && body.metadata.externalId);
 
-    console.log(`[Webhook AbacatePay] Token: ${token} | Status: ${status}`);
+    console.log(`[Webhook] Processando Token: ${token} | Status: ${status}`);
 
     if (!token) {
-      console.error("❌ Erro: Token não identificado no JSON recebido.");
-      return NextResponse.json({ error: "Token ausente" }, { status: 200 });
+      console.error("❌ Webhook falhou: Token não encontrado no corpo da requisição.");
+      return NextResponse.json({ error: "Token não encontrado" }, { status: 200 });
     }
 
-    // 3. Verificação de pagamento aprovado
+    // 3. Se aprovado, atualiza o banco
     if (status === "PAID" || status === "CONFIRMED") {
+      // Usamos updateOne ou findOneAndUpdate para garantir a troca de status
       const result = await Page.findOneAndUpdate(
-        { token: token },
-        { status: "APPROVED" },
+        { token: token.trim() }, // trim para evitar espaços vazios
+        { $set: { status: "APPROVED" } }, 
         { new: true } 
       );
 
       if (result) {
-        console.log(`✅ Página ${token} ativada no banco com sucesso!`);
+        console.log(`✅ SUCESSO: Página ${token} agora é APPROVED!`);
 
-        // AJUSTE: No seu Schema o campo é 'contact' e não 'email'
-        const emailDestino = result.contact || result.email;
-
-        if (emailDestino) {
+        // Disparo de e-mail
+        const emailDestino = result.contact;
+        if (emailDestino && emailDestino.includes('@')) {
           try {
             await sendSuccessEmail(emailDestino, result.names, token);
-            console.log(`📧 E-mail enviado para: ${emailDestino}`);
-          } catch (mailError) {
-            console.error("❌ Erro ao disparar e-mail:", mailError);
+            console.log(`📧 E-mail de confirmação enviado.`);
+          } catch (e) {
+            console.error("❌ Falha ao enviar e-mail:", e);
           }
         }
       } else {
-        console.warn(`⚠️ Token ${token} não encontrado na coleção 'pages'.`);
+        console.warn(`⚠️ ALERTA: Token ${token} recebido, mas não existe no banco.`);
       }
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ received: true }, { status: 200 });
 
   } catch (error: any) {
     console.error("❌ Erro Crítico no Webhook:", error);

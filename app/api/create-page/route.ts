@@ -13,18 +13,22 @@ export async function POST(req: Request) {
     await connectToDatabase();
     const form = await req.formData();
 
-    // Captura os dados do formulário
+    // Captura os dados (Ajustado para bater com seu onSubmit e seu Schema)
     const plan = String(form.get("plan") || "BASIC").toUpperCase();
     const names = String(form.get("names") || "").trim();
     const startDate = String(form.get("startDate") || "").trim();
-    const email = String(form.get("email") || "").trim();
+    
+    // CAPTURA DA MÚSICA: Pegamos o campo 'music' que vem do formulário
+    const musicField = String(form.get("music") || "").trim();
+    
+    const email = String(form.get("email") || form.get("contact") || "").trim();
     const whatsapp = String(form.get("whatsapp") || "").trim();
 
     const files = form.getAll("photos") as File[];
     const token = safeToken(10);
     const photoUrls: string[] = [];
 
-    // 1. Upload para o Cloudflare R2
+    // 1. Upload para Cloudflare R2
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!file.name) continue;
@@ -41,18 +45,19 @@ export async function POST(req: Request) {
       photoUrls.push(`${process.env.R2_PUBLIC_URL}/${filename}`);
     }
 
-    // 2. Salva no MongoDB com status PENDING
+    // 2. SALVA NO MONGODB (youtubeUrl é o campo do seu Schema)
     await Page.create({
       token,
       plan,
       names,
       date: startDate,
+      youtubeUrl: musicField, // AQUI SALVA A MÚSICA
       photoUrls,
       status: "PENDING",
       contact: email || whatsapp
     });
 
-    // 3. Gerar link no AbacatePay (VERSÃO SEM ERRO DE CPF)
+    // 3. Gerar link no AbacatePay
     const price = plan === "PREMIUM" ? 4990 : 2990;
     
     const abacateResponse = await fetch("https://api.abacatepay.com/v1/billing/create", {
@@ -66,7 +71,7 @@ export async function POST(req: Request) {
         methods: ["PIX"],
         products: [
           {
-            externalId: token,
+            externalId: token, // O Token vai aqui como ID externo
             name: `Página Love365 - ${plan}`,
             quantity: 1,
             price: price,
@@ -74,20 +79,15 @@ export async function POST(req: Request) {
         ],
         returnUrl: `${process.env.NEXT_PUBLIC_URL}/p/${token}`,
         completionUrl: `${process.env.NEXT_PUBLIC_URL}/p/${token}`,
-        // NOTA: Não enviamos customerId nem o objeto customer aqui.
-        // Isso obriga o AbacatePay a pedir os dados direto no checkout dele,
-        // evitando o erro de CPF/taxId no seu servidor.
       }),
     });
 
     const abacateData = await abacateResponse.json();
 
     if (!abacateResponse.ok) {
-      console.error("Erro AbacatePay:", abacateData);
-      throw new Error("Erro ao gerar link de pagamento");
+      throw new Error("Erro ao gerar link de pagamento no AbacatePay");
     }
 
-    // Retorna a URL de pagamento para o frontend redirecionar
     return NextResponse.json({ 
       token, 
       paymentUrl: abacateData.data.url 

@@ -3,9 +3,15 @@ import { resend } from './resend';
 export async function sendSuccessEmail(email: string, names: string, token: string) {
   const pageUrl = `${process.env.NEXT_PUBLIC_URL}/p/${token}`;
 
+  // PROTEÇÃO: Se a chave não estiver configurada, apenas loga o aviso e não quebra o site
+  if (!resend) {
+    console.warn('⚠️ E-mail não enviado: RESEND_API_KEY não configurada nas variáveis de ambiente.');
+    return { success: false, error: 'Chave não configurada' };
+  }
+
   try {
     await resend.emails.send({
-      from: 'Love365 <onboarding@resend.dev>', // Quando validar seu domínio, troque por contato@love365.com.br
+      from: 'Love365 <onboarding@resend.dev>',
       to: email,
       subject: `Seu presente para ${names} está pronto! ❤️`,
       html: `
