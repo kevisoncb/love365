@@ -38,21 +38,73 @@ function diffParts(from: Date, to: Date) {
 
 function PreviewTile({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-xl bg-white p-2 text-center shadow-md border border-pink-100/50">
-      <div className="text-[8px] text-pink-500 tracking-tighter uppercase font-black">{label}</div>
-      <div className="text-sm font-black text-pink-600 tabular-nums leading-none mt-0.5">{value}</div>
+    <div className="rounded-2xl bg-white/70 border border-zinc-200 px-4 py-3 text-center">
+      <div className="text-[10px] tracking-[0.25em] uppercase text-zinc-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums text-zinc-900">{value}</div>
     </div>
   );
 }
 
-const Logo = () => (
-  <div className="flex items-center gap-2">
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#db2777"/>
-    </svg>
-    <span className="text-2xl font-bold text-pink-600 tracking-tighter italic">Love365</span>
-  </div>
-);
+const Logo = () => <div className="font-semibold tracking-tight text-zinc-900">Love365</div>;
+
+/**
+ * Redimensiona + comprime uma imagem (File) usando Canvas.
+ * - Converte para JPEG
+ * - Limita a largura (default 1080px) mantendo proporção
+ * - Qualidade default 0.8
+ *
+ * Isso reduz drasticamente payload (corrige 413 no iPhone).
+ */
+async function compressImageToJpeg(
+  file: File,
+  opts?: { maxWidth?: number; quality?: number }
+): Promise<File> {
+  const maxWidth = opts?.maxWidth ?? 1080;
+  const quality = opts?.quality ?? 0.8;
+
+  // Se não for imagem, devolve como veio
+  if (!file.type.startsWith("image/")) return file;
+
+  const blobUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = blobUrl;
+    });
+
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+
+    // Se já é pequena, ainda assim converte para jpeg para remover EXIF e padronizar
+    const targetW = Math.min(maxWidth, w);
+    const targetH = Math.round((h * targetW) / w);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    const outBlob: Blob = await new Promise((resolve) => {
+      canvas.toBlob(
+        (b) => resolve(b || file),
+        "image/jpeg",
+        quality
+      );
+    });
+
+    const safeName = file.name.replace(/\.[^/.]+$/, "");
+    return new File([outBlob], `${safeName}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return file;
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
 
 export default function CreatePage() {
   const [plan, setPlan] = useState<Plan>("BASIC");
@@ -61,17 +113,18 @@ export default function CreatePage() {
   const [yt, setYt] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
+
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [now, setNow] = useState(new Date());
-  
-  // Estado para os corações da animação (Evita Erro de Hidratação)
-  const [hearts, setHearts] = useState<{left: string, delay: string}[]>([]);
+
+  // Corações (cliente only)
+  const [hearts, setHearts] = useState<{ left: string; delay: string }[]>([]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
-    // Gerar corações apenas no cliente
     const generatedHearts = [...Array(8)].map(() => ({
       left: `${Math.random() * 90}%`,
       delay: `${Math.random() * 5}s`,
@@ -93,10 +146,25 @@ export default function CreatePage() {
     return diffParts(start, now);
   }, [startDate, now]);
 
-  const onPickPhotos = (files: FileList | null) => {
+  const onPickPhotos = async (files: FileList | null) => {
     if (!files) return;
+
+    // Filtra apenas imagens
     const picked = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    setPhotos([...photos, ...picked].slice(0, maxPhotos));
+
+    // Limite de quantidade
+    const remaining = Math.max(0, maxPhotos - photos.length);
+    const toProcess = picked.slice(0, remaining);
+
+    // Comprime / redimensiona (principal para iPhone)
+    const processed: File[] = [];
+    for (const f of toProcess) {
+      // Stories: 1080px é um padrão ótimo (reduz payload e mantém qualidade)
+      const compressed = await compressImageToJpeg(f, { maxWidth: 1080, quality: 0.8 });
+      processed.push(compressed);
+    }
+
+    setPhotos((prev) => [...prev, ...processed].slice(0, maxPhotos));
   };
 
   const removePhoto = (idx: number) => {
@@ -106,7 +174,6 @@ export default function CreatePage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-
     setSubmitting(true);
 
     try {
@@ -117,7 +184,7 @@ export default function CreatePage() {
       formData.append("yt", yt);
       formData.append("whatsapp", whatsapp);
       formData.append("email", email);
-      
+
       photos.forEach((file) => {
         formData.append("photos", file);
       });
@@ -133,14 +200,11 @@ export default function CreatePage() {
         throw new Error(data.error || "Erro ao criar página");
       }
 
-      // NOVO: Se houver URL de pagamento (AbacatePay), redireciona para lá
       if (data.paymentUrl) {
         window.location.href = data.paymentUrl;
       } else {
-        // Fallback caso não tenha pagamento
         window.location.href = data.publicUrl;
       }
-
     } catch (err: any) {
       alert("Ops! " + err.message);
       console.error("Erro no envio:", err);
@@ -149,160 +213,249 @@ export default function CreatePage() {
     }
   };
 
-  const cardStyle = "bg-white rounded-[2rem] p-8 shadow-[0_10px_40px_rgb(0,0,0,0.06)] border border-zinc-100 mb-6";
-  const inputStyle = "w-full rounded-2xl bg-zinc-50 border border-zinc-200 px-5 py-4 text-sm text-zinc-800 outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all placeholder:text-zinc-400";
+  const cardStyle =
+    "bg-white rounded-[2rem] p-8 shadow-[0_10px_40px_rgb(0,0,0,0.06)] border border-zinc-100 mb-6";
+  const inputStyle =
+    "w-full rounded-2xl bg-zinc-50 border border-zinc-200 px-5 py-4 text-sm text-zinc-800 outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all placeholder:text-zinc-400";
 
   return (
-    <main className="min-h-screen bg-[#FAFAFA] text-zinc-900 font-sans pt-24 pb-10">
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-zinc-100">
-        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/"><Logo /></Link>
-          <Link href="/" className="text-sm font-bold text-zinc-400 hover:text-pink-600 transition-colors">Voltar</Link>
+    <main className="min-h-screen bg-gradient-to-b from-pink-50 via-white to-white">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <Link href="/" className="text-sm text-zinc-600 hover:text-zinc-900">
+            Voltar
+          </Link>
+          <Logo />
         </div>
-      </nav>
 
-      <div className="mx-auto max-w-6xl px-4">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:items-start">
-          
-          <div className="flex flex-col">
-            <header className="mb-10 text-center md:text-left">
-              <h1 className="text-5xl font-black tracking-tight text-zinc-900 mb-2 italic">Configure sua página ✨</h1>
-              <p className="text-zinc-500 font-medium">Preencha os dados e veja a mágica acontecer ao lado.</p>
-            </header>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+          {/* FORM */}
+          <form onSubmit={onSubmit}>
+            <div className={cardStyle}>
+              <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
+                Configure sua página ✨
+              </h1>
+              <p className="mt-2 text-sm text-zinc-600">
+                Preencha os dados e veja a prévia ao lado.
+              </p>
+            </div>
 
-            <form onSubmit={onSubmit}>
-              <div className={cardStyle}>
-                <label className="text-[11px] font-black uppercase tracking-widest text-pink-600 block mb-6 italic">1. Escolha o Plano</label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button type="button" onClick={() => setPlan("BASIC")} className={`p-6 rounded-2xl border-2 transition-all ${plan === "BASIC" ? "border-pink-500 bg-pink-50/30 shadow-sm" : "border-zinc-100 bg-white"}`}>
-                    <span className="block font-bold text-[10px] opacity-60 mb-1">ESSENCIAL</span>
-                    <span className="text-xl font-black text-pink-600 uppercase">R$ 29,90</span>
-                  </button>
-                  <button type="button" onClick={() => setPlan("PREMIUM")} className={`relative p-6 rounded-2xl border-2 transition-all ${plan === "PREMIUM" ? "border-pink-500 bg-pink-50/30 shadow-sm" : "border-zinc-100 bg-white"}`}>
-                    <span className="block font-bold text-[10px] opacity-60 mb-1 uppercase">Vitalício</span>
-                    <span className="text-xl font-black text-pink-600 uppercase">R$ 49,90</span>
-                    <div className="absolute -top-3 -right-2 bg-pink-600 text-[8px] text-white font-black px-2 py-1 rounded-full uppercase shadow-md">Melhor</div>
-                  </button>
+            <div className={cardStyle}>
+              <h2 className="text-lg font-semibold text-zinc-900 mb-4">1. Escolha o Plano</h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPlan("BASIC")}
+                  className={`p-6 rounded-2xl border-2 transition-all text-left ${
+                    plan === "BASIC"
+                      ? "border-pink-500 bg-pink-50/30 shadow-sm"
+                      : "border-zinc-100 bg-white"
+                  }`}
+                >
+                  <div className="text-xs tracking-[0.25em] uppercase text-zinc-500">Essencial</div>
+                  <div className="mt-2 text-2xl font-semibold text-zinc-900">R$ 29,90</div>
+                  <div className="mt-2 text-sm text-zinc-600">Até 3 fotos, sem música.</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPlan("PREMIUM")}
+                  className={`relative p-6 rounded-2xl border-2 transition-all text-left ${
+                    plan === "PREMIUM"
+                      ? "border-pink-500 bg-pink-50/30 shadow-sm"
+                      : "border-zinc-100 bg-white"
+                  }`}
+                >
+                  <div className="absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full bg-pink-500 text-white">
+                    Melhor
+                  </div>
+                  <div className="text-xs tracking-[0.25em] uppercase text-zinc-500">Vitalício</div>
+                  <div className="mt-2 text-2xl font-semibold text-zinc-900">R$ 49,90</div>
+                  <div className="mt-2 text-sm text-zinc-600">Até 5 fotos + música do YouTube.</div>
+                </button>
+              </div>
+            </div>
+
+            <div className={cardStyle}>
+              <h2 className="text-lg font-semibold text-zinc-900 mb-4">2. Informações Principais</h2>
+
+              <div className="space-y-4">
+                <input
+                  className={inputStyle}
+                  value={names}
+                  onChange={(e) => setNames(e.target.value)}
+                  placeholder="Nomes (Ex: Ana e Leo)"
+                  maxLength={40}
+                  required
+                />
+
+                <input
+                  className={inputStyle}
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  required
+                />
+
+                <input
+                  className={inputStyle}
+                  value={yt}
+                  onChange={(e) => setYt(e.target.value)}
+                  placeholder="Link do vídeo no YouTube (Premium)"
+                  disabled={plan === "BASIC"}
+                />
+              </div>
+            </div>
+
+            <div className={cardStyle}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-zinc-900">3. Fotos do Casal</h2>
+                <div className="text-xs text-zinc-600">
+                  {photos.length}/{maxPhotos} fotos
                 </div>
               </div>
 
-              <div className={cardStyle}>
-                <label className="text-[11px] font-black uppercase tracking-widest text-pink-600 block mb-6 italic">2. Informações Principais</label>
-                <div className="space-y-4">
-                  <input className={inputStyle} value={names} onChange={(e) => setNames(e.target.value)} placeholder="Nomes (Ex: Ana e Leo)" maxLength={40} required />
-                  <input type="date" className={inputStyle} value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
-                  <input className={`${inputStyle} ${plan === 'BASIC' ? 'opacity-50 bg-zinc-100' : ''}`} value={yt} onChange={(e) => setYt(e.target.value)} placeholder="Link do vídeo no YouTube" disabled={plan === 'BASIC'} />
-                </div>
-              </div>
-
-              <div className={cardStyle}>
-                <div className="flex justify-between items-center mb-6">
-                  <label className="text-[11px] font-black uppercase tracking-widest text-pink-600 italic">3. Fotos do Casal</label>
-                  <span className="text-[10px] bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full font-bold">{photos.length}/{maxPhotos} FOTOS</span>
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                  {photoPreviews.map((src, i) => (
-                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden shadow-sm group border border-zinc-100">
-                      <img src={src} className="h-full w-full object-cover" alt="preview" />
-                      <button type="button" onClick={() => removePhoto(i)} className="absolute inset-0 bg-white/40 opacity-0 group-hover:opacity-100 text-zinc-800 font-bold transition-all flex items-center justify-center backdrop-blur-[1px]">Remover</button>
-                    </div>
-                  ))}
-                  {photos.length < maxPhotos && (
-                    <label className="aspect-square rounded-xl border-2 border-dashed border-zinc-200 flex items-center justify-center cursor-pointer hover:bg-pink-50 transition-all">
-                      <span className="text-2xl text-zinc-300">+</span>
-                      <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => onPickPhotos(e.target.files)} />
-                    </label>
-                  )}
-                </div>
-              </div>
-
-              <div className={cardStyle}>
-                <label className="text-[11px] font-black uppercase tracking-widest text-pink-600 block mb-6 italic">4. Dados de Entrega</label>
-                <div className="space-y-3">
-                  <input className={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(onlyDigits(e.target.value))} placeholder="WhatsApp com DDD" required />
-                  <input type="email" className={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Seu melhor e-mail" required />
-                </div>
-              </div>
-
-              <button type="submit" disabled={submitting} className="w-full bg-pink-600 hover:bg-pink-700 py-6 rounded-[2rem] font-black text-white shadow-xl shadow-pink-100 transition-all uppercase tracking-widest text-sm active:scale-95">
-                {submitting ? "Processando..." : "Criar Meu Site Eterno ❤️"}
-              </button>
-            </form>
-          </div>
-
-          <div className="sticky top-28 flex flex-col items-center">
-            <div className="relative w-[285px] h-[580px] border-[4px] border-zinc-900 rounded-[2.8rem] bg-zinc-950 shadow-2xl overflow-hidden">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-5 bg-zinc-900 rounded-b-2xl z-50"></div>
-              
-              <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
-                {hearts.map((heart, i) => (
-                  <div 
-                    key={i} 
-                    className="absolute text-pink-500/40 animate-fall text-lg" 
-                    style={{ left: heart.left, animationDelay: heart.delay }}
-                  >
-                    ❤️
+              <div className="grid grid-cols-3 gap-3">
+                {photoPreviews.map((src, i) => (
+                  <div key={src} className="relative group rounded-2xl overflow-hidden border border-zinc-200">
+                    <img src={src} className="h-28 w-full object-cover" alt={`Foto ${i + 1}`} />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(i)}
+                      className="absolute inset-0 bg-white/40 opacity-0 group-hover:opacity-100 text-zinc-800 font-bold transition-all flex items-center justify-center backdrop-blur-[1px]"
+                    >
+                      Remover
+                    </button>
                   </div>
                 ))}
+
+                {photos.length < maxPhotos && (
+                  <label className="h-28 rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 flex items-center justify-center text-sm text-zinc-500 cursor-pointer hover:border-pink-400 hover:text-pink-600 transition-all">
+                    +
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => onPickPhotos(e.target.files)}
+                    />
+                  </label>
+                )}
               </div>
 
-              <div className="relative h-full w-full bg-black flex flex-col">
+              <p className="mt-3 text-xs text-zinc-500">
+                Dica: as fotos serão automaticamente ajustadas para qualidade ideal (stories) para funcionar em iPhone.
+              </p>
+            </div>
+
+            <div className={cardStyle}>
+              <h2 className="text-lg font-semibold text-zinc-900 mb-4">4. Dados de Entrega</h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input
+                  className={inputStyle}
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(onlyDigits(e.target.value))}
+                  placeholder="WhatsApp com DDD"
+                  required
+                />
+                <input
+                  className={inputStyle}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Seu melhor e-mail"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="mt-6 w-full rounded-2xl bg-pink-600 text-white py-4 font-semibold hover:bg-pink-700 disabled:opacity-60 transition-all"
+              >
+                {submitting ? "Processando..." : "Criar Meu Site Eterno ❤️"}
+              </button>
+            </div>
+          </form>
+
+          {/* PREVIEW */}
+          <div className="sticky top-6">
+            <div className="relative overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-[0_30px_90px_rgba(0,0,0,0.12)]">
+              <div className="relative aspect-[9/16] bg-zinc-100">
                 {photoPreviews[0] ? (
-                  <img src={photoPreviews[0]} className="absolute inset-0 h-full w-full object-cover opacity-90" alt="Preview" />
+                  <img
+                    src={photoPreviews[0]}
+                    alt="Prévia"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
-                    <span className="text-3xl opacity-20">📸</span>
-                    <p className="text-[8px] text-zinc-500 uppercase font-black mt-2">Foto Principal</p>
+                  <div className="absolute inset-0 flex items-center justify-center text-zinc-500">
+                    Foto Principal
                   </div>
                 )}
-                
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-                
-                <div className="relative z-10 flex flex-col items-center pt-14 px-6 text-center">
-                  <h2 className="text-[28px] font-[900] text-white italic tracking-tighter leading-8 uppercase break-words w-full drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">
-                    {names || "NOMES AQUI"}
-                  </h2>
+
+                {/* overlay */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-black/10 to-black/70" />
+
+                {/* hearts */}
+                <div className="absolute inset-0 pointer-events-none">
+                  {hearts.map((heart, i) => (
+                    <span
+                      key={i}
+                      className="absolute animate-[fall_6s_linear_infinite] text-pink-400"
+                      style={{ left: heart.left, animationDelay: heart.delay, top: "-10%" }}
+                    >
+                      ❤️
+                    </span>
+                  ))}
                 </div>
 
-                <div className="relative z-10 mt-auto pb-12 px-5 w-full">
+                {/* name */}
+                <div className="absolute top-10 inset-x-0 text-center px-4">
+                  <h2 className="text-3xl font-semibold text-white drop-shadow">
+                    {names || "NOMES AQUI"}
+                  </h2>
+                  <div className="mt-2 text-xs text-white/70">Transmissão em tempo real</div>
+                </div>
+
+                {/* timer */}
+                <div className="absolute bottom-6 inset-x-0 px-4">
                   <div className="grid grid-cols-3 gap-2">
-                    <PreviewTile label="Anos" value={timeDisplay.years} />
-                    <PreviewTile label="Meses" value={timeDisplay.months} />
-                    <PreviewTile label="Dias" value={timeDisplay.days} />
-                    <PreviewTile label="Hrs" value={pad2(timeDisplay.hours)} />
-                    <PreviewTile label="Min" value={pad2(timeDisplay.mins)} />
-                    <PreviewTile label="Seg" value={pad2(timeDisplay.secs)} />
+                    <PreviewTile label="ANOS" value={timeDisplay.years} />
+                    <PreviewTile label="MESES" value={timeDisplay.months} />
+                    <PreviewTile label="DIAS" value={timeDisplay.days} />
+                    <PreviewTile label="HORAS" value={pad2(timeDisplay.hours)} />
+                    <PreviewTile label="MIN" value={pad2(timeDisplay.mins)} />
+                    <PreviewTile label="SEG" value={pad2(timeDisplay.secs)} />
                   </div>
                 </div>
               </div>
+
+              <div className="px-6 py-5 text-xs text-zinc-500">
+                Copyright © 2025 Love365.com.br - Todos os direitos reservados
+                <div className="mt-1">Feito com carinho para o seu amor ❤️</div>
+              </div>
             </div>
 
-            <div className="mt-8 flex items-center gap-2 py-2 px-4 bg-white rounded-full shadow-sm border border-zinc-100">
-              <span className="h-2 w-2 rounded-full bg-pink-500 animate-pulse"></span>
-              <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest">Transmissão em tempo real</p>
-            </div>
+            <style jsx global>{`
+              @keyframes fall {
+                0% {
+                  transform: translateY(-10vh);
+                  opacity: 0;
+                }
+                12% {
+                  opacity: 1;
+                }
+                100% {
+                  transform: translateY(110vh);
+                  opacity: 0;
+                }
+              }
+            `}</style>
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        @keyframes fall {
-          0% { transform: translateY(-20px) rotate(0deg); opacity: 0; }
-          20% { opacity: 0.6; }
-          100% { transform: translateY(600px) rotate(360deg); opacity: 0; }
-        }
-        .animate-fall { animation: fall 6s linear infinite; top: -50px; }
-      `}</style>
-
-      <footer className="bg-white border-t border-zinc-100 py-16 px-6 mt-20">
-        <div className="max-w-6xl mx-auto flex flex-col items-center gap-6">
-          <Logo />
-          <div className="text-center text-zinc-400 font-bold">
-            <p className="text-[11px] tracking-widest uppercase">Copyright © 2025 Love365.com.br - Todos os direitos reservados</p>
-            <p className="text-[10px] mt-2 font-medium">Feito com carinho para o seu amor ❤️</p>
-          </div>
-        </div>
-      </footer>
     </main>
   );
 }
