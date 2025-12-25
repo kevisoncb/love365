@@ -2,64 +2,111 @@ import { NextResponse } from "next/server";
 import { connectToDatabase, Page } from "@/lib/db";
 import { sendSuccessEmail } from "@/lib/mail-service";
 
-export const dynamic = 'force-dynamic'; 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function pickFirstString(...values: any[]): string | null {
+  for (const v of values) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function upper(s: string | null) {
+  return (s || "").trim().toUpperCase();
+}
 
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
-    const body = await req.json();
-    
-    console.log(" [DEBUG] Payload Recebido:", JSON.stringify(body));
 
-    const eventData = body.data;
-    
-    // CAPTURA DO STATUS (Forçamos para maiúsculo para comparar sem erro)
-    const statusRaw = eventData?.status || body.status || "";
-    const status = statusRaw.toUpperCase(); 
-
-    // CAPTURA DO TOKEN
-    const token = 
-      eventData?.externalId || 
-      eventData?.products?.[0]?.externalId || 
-      body.externalId ||
-      (body.metadata && body.metadata.externalId);
-
-    console.log(`[Webhook] Processando Token: ${token} | Status Original: ${statusRaw} | Status Normalizado: ${status}`);
-
-    if (!token) {
-      console.error("❌ Webhook falhou: Token não encontrado.");
-      return NextResponse.json({ error: "Token não encontrado" }, { status: 200 });
+    // Alguns provedores mandam JSON, outros mandam string JSON
+    const rawText = await req.text();
+    let body: any;
+    try {
+      body = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      body = {};
     }
 
-    // AQUI ESTAVA O ERRO: Agora aceita "paid", "PAID", "confirmed" ou "CONFIRMED"
-    if (status === "PAID" || status === "CONFIRMED") {
-      const result = await Page.findOneAndUpdate(
-        { token: token.trim() }, 
-        { $set: { status: "APPROVED" } }, 
-        { new: true } 
-      );
+    // Logs úteis no Vercel
+    console.log("[ABACATEPAY WEBHOOK] RAW:", rawText?.slice(0, 2000));
 
-      if (result) {
-        console.log(`✅ SUCESSO: Página ${token} agora é APPROVED!`);
+    const data = body?.data ?? body;
 
-        const emailDestino = result.contact;
-        if (emailDestino && emailDestino.includes('@')) {
-          try {
-            await sendSuccessEmail(emailDestino, result.names, token);
-            console.log(`📧 E-mail enviado para ${emailDestino}`);
-          } catch (e) {
-            console.error("❌ Falha no e-mail:", e);
-          }
-        }
-      } else {
-        console.warn(`⚠️ ALERTA: Token ${token} não encontrado no banco.`);
+    // STATUS: tente vários lugares comuns
+    const statusRaw = pickFirstString(
+      data?.status,
+      data?.billing?.status,
+      data?.charge?.status,
+      data?.payment?.status,
+      body?.status
+    );
+    const status = upper(statusRaw);
+
+    // TOKEN (externalId): tente vários lugares comuns
+    const token = pickFirstString(
+      data?.externalId,
+      data?.billing?.externalId,
+      data?.charge?.externalId,
+      data?.payment?.externalId,
+      data?.products?.[0]?.externalId,
+      data?.billing?.products?.[0]?.externalId,
+      data?.charge?.products?.[0]?.externalId,
+      data?.metadata?.externalId,
+      body?.externalId,
+      body?.metadata?.externalId
+    );
+
+    console.log("[ABACATEPAY WEBHOOK] token:", token, "statusRaw:", statusRaw, "status:", status);
+
+    if (!token) {
+      console.warn("[ABACATEPAY WEBHOOK] Token não encontrado no payload.");
+      return NextResponse.json({ received: true, warning: "token_missing" }, { status: 200 });
+    }
+
+    // Quais status significam “pago”?
+    const isApproved =
+      status === "PAID" ||
+      status === "CONFIRMED" ||
+      status === "APPROVED" ||
+      status === "SUCCEEDED" ||
+      status === "SUCCESS";
+
+    if (!isApproved) {
+      // Mantém como pendente, mas loga
+      console.log("[ABACATEPAY WEBHOOK] Status ainda não aprovado:", status);
+      return NextResponse.json({ received: true, status }, { status: 200 });
+    }
+
+    const result = await Page.findOneAndUpdate(
+      { token },
+      { $set: { status: "APPROVED" } },
+      { new: true }
+    );
+
+    if (!result) {
+      console.warn("[ABACATEPAY WEBHOOK] Não achei Page no Mongo para token:", token);
+      return NextResponse.json({ received: true, warning: "page_not_found", token }, { status: 200 });
+    }
+
+    console.log("[ABACATEPAY WEBHOOK] Page atualizada para APPROVED:", token);
+
+    // Envio de e-mail (se for e-mail)
+    const contact = (result as any)?.contact;
+    if (typeof contact === "string" && contact.includes("@")) {
+      try {
+        await sendSuccessEmail(contact, (result as any)?.names || "Love365", token);
+        console.log("[ABACATEPAY WEBHOOK] Email enviado:", contact);
+      } catch (e) {
+        console.error("[ABACATEPAY WEBHOOK] Falha ao enviar email:", e);
       }
     }
 
-    return NextResponse.json({ received: true }, { status: 200 });
-
-  } catch (error: any) {
-    console.error("❌ Erro Crítico no Webhook:", error);
-    return NextResponse.json({ error: "Erro Interno" }, { status: 200 });
+    return NextResponse.json({ received: true, ok: true }, { status: 200 });
+  } catch (error) {
+    console.error("[ABACATEPAY WEBHOOK] Erro crítico:", error);
+    // Retorna 200 para não ficar retentando infinito
+    return NextResponse.json({ received: true, error: "internal" }, { status: 200 });
   }
 }
