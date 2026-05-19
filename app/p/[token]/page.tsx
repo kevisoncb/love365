@@ -2,12 +2,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { TimerTile } from "@/components/tribute/TimerTile";
-import { HeartsOverlay } from "@/components/tribute/HeartsOverlay";
-import { PendingPaymentScreen } from "@/components/tribute/PendingPaymentScreen";
-import { LoadingScreen } from "@/components/ui/LoadingScreen";
-import { pad2, diffParts } from "@/lib/date-utils";
-import { extractYouTubeId } from "@/lib/youtube";
 
 type Plan = "BASIC" | "PREMIUM";
 
@@ -15,23 +9,173 @@ type PageDTO = {
   token: string;
   plan: Plan;
   names: string;
-  date?: string;
-  startDate?: string;
-  photoUrls?: string[];
-  photos?: string[];
-  youtubeUrl?: string | null;
-  yt?: string | null;
+  date?: string; 
+  startDate?: string; // Antigo
+  photoUrls?: string[]; 
+  photos?: string[]; // Antigo
+  youtubeUrl?: string | null; 
+  yt?: string | null; // Antigo
   createdAt?: string;
   status?: string;
 };
 
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function diffParts(from: Date, to: Date) {
+  let years = to.getFullYear() - from.getFullYear();
+  let months = to.getMonth() - from.getMonth();
+  let days = to.getDate() - from.getDate();
+
+  if (days < 0) {
+    months--;
+    const lastMonth = new Date(to.getFullYear(), to.getMonth(), 0);
+    days += lastMonth.getDate();
+  }
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
+
+  const diffMs = Math.max(0, to.getTime() - from.getTime());
+  const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+  const mins = Math.floor((diffMs / (1000 * 60)) % 60);
+  const secs = Math.floor((diffMs / 1000) % 60);
+
+  return { years, months, days, hours, mins, secs };
+}
+
+function extractYouTubeId(input: string): string | null {
+  const s = (input || "").trim();
+  if (!s) return null;
+  if (!s.includes("http") && /^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
+
+  try {
+    const url = new URL(s);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.replace("/", "").trim();
+      return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    }
+    const v = url.searchParams.get("v");
+    if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+    const parts = url.pathname.split("/").filter(Boolean);
+    const idx = parts.findIndex((p) => p === "shorts" || p === "embed");
+    if (idx >= 0 && parts[idx + 1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[idx + 1])) {
+      return parts[idx + 1];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/* ---------------- Hearts Overlay ---------------- */
+
+type HeartSpec = {
+  id: string;
+  leftPct: number;
+  sizePx: number;
+  durationSec: number;
+  negativeDelaySec: number;
+  driftPx: number;
+  opacity: number;
+};
+
+function rand(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
+function buildHearts(count: number): HeartSpec[] {
+  return Array.from({ length: count }).map((_, i) => {
+    const durationSec = rand(7, 13);
+    return {
+      id: `${Date.now()}-${i}-${Math.random().toString(16).slice(2)}`,
+      leftPct: rand(0, 100),
+      sizePx: rand(10, 18),
+      durationSec,
+      negativeDelaySec: -rand(0, durationSec),
+      driftPx: rand(-45, 45),
+      opacity: rand(0.35, 0.9),
+    };
+  });
+}
+
+function HeartsOverlayInHero({ enabled }: { enabled: boolean }) {
+  const [hearts, setHearts] = useState<HeartSpec[]>([]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setHearts([]);
+      return;
+    }
+    setHearts(buildHearts(55));
+  }, [enabled]);
+
+  if (!enabled) return null;
+
+  return (
+    <>
+      <style jsx global>{`
+        @keyframes love365-fall-hero {
+          0% { transform: translate3d(var(--drift), -12vh, 0) rotate(0deg); opacity: 0; }
+          12% { opacity: var(--op); }
+          100% { transform: translate3d(calc(var(--drift) * -1), 110vh, 0) rotate(360deg); opacity: 0; }
+        }
+      `}</style>
+      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+        {hearts.map((h) => (
+          <span
+            key={h.id}
+            className="absolute top-0 select-none"
+            style={{
+              left: `${h.leftPct}%`,
+              fontSize: `${h.sizePx}px`,
+              animationName: "love365-fall-hero",
+              animationDuration: `${h.durationSec}s`,
+              animationTimingFunction: "linear",
+              animationIterationCount: "infinite",
+              animationDelay: `${h.negativeDelaySec}s`,
+              "--drift": `${h.driftPx}px`,
+              "--op": h.opacity,
+              color: "rgb(244,63,94)",
+              filter: "drop-shadow(0 0 6px rgba(244,63,94,0.35))",
+              willChange: "transform, opacity",
+            } as any}
+            aria-hidden="true"
+          >
+            ♥
+          </span>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Timer Tile ---------------- */
+
+function TimerTile({ label, value, premium }: { label: string; value: number | string; premium: boolean }) {
+  return (
+    <div className={[
+        "rounded-2xl px-3 py-3 text-center backdrop-blur-md border",
+        premium ? "border-rose-300/25 bg-white/12 shadow-[0_0_30px_rgba(244,63,94,0.10)]" : "border-white/10 bg-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.45)]",
+      ].join(" ")}>
+      <div className="text-[10px] text-white/65 tracking-[0.25em] uppercase">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-white">{value}</div>
+    </div>
+  );
+}
+
+/* ---------------- Main Page ---------------- */
+
 export default function PublicCouplePage() {
   const params = useParams();
   const searchParams = useSearchParams();
-
+  
+  // Captura robusta do token
   const token = useMemo(() => {
-    if (!params?.token) return undefined;
-    return Array.isArray(params.token) ? params.token[0] : params.token;
+     if (!params?.token) return undefined;
+     return Array.isArray(params.token) ? params.token[0] : params.token;
   }, [params?.token]);
 
   const [data, setData] = useState<PageDTO | null>(null);
@@ -50,9 +194,9 @@ export default function PublicCouplePage() {
         plan: (searchParams.get("plan") as Plan) || "BASIC",
         names: searchParams.get("names") || "Exemplo Casal",
         date: searchParams.get("date") || "2024-01-01",
-        photoUrls: [],
+        photoUrls: [], 
         youtubeUrl: searchParams.get("yt"),
-        status: "APPROVED",
+        status: "APPROVED"
       });
       setLoading(false);
       return;
@@ -64,7 +208,7 @@ export default function PublicCouplePage() {
     }
 
     let alive = true;
-    let timeoutId: ReturnType<typeof setTimeout>;
+    let timeoutId: NodeJS.Timeout;
 
     async function checkStatus() {
       try {
@@ -81,15 +225,12 @@ export default function PublicCouplePage() {
         if (json.status !== "APPROVED") {
           timeoutId = setTimeout(checkStatus, 5000);
         }
-      } catch {
+      } catch (err) {
         if (alive) timeoutId = setTimeout(checkStatus, 10000);
       }
     }
     checkStatus();
-    return () => {
-      alive = false;
-      clearTimeout(timeoutId);
-    };
+    return () => { alive = false; clearTimeout(timeoutId); };
   }, [token, searchParams]);
 
   useEffect(() => {
@@ -97,25 +238,36 @@ export default function PublicCouplePage() {
     return () => clearInterval(t);
   }, []);
 
+  // --- LÓGICA DE COMPATIBILIDADE CORRIGIDA ---
   const premium = data?.plan === "PREMIUM";
-
+  
+  // Garante que fotos apareçam independente do nome no banco
   const photos = useMemo(() => {
-    return data?.photoUrls || (data as PageDTO & { photos?: string[] })?.photos || [];
+    return data?.photoUrls || (data as any)?.photos || [];
   }, [data]);
 
+  // Garante que a música funcione independente do nome no banco
   const finalYoutubeUrl = useMemo(() => {
-    return data?.youtubeUrl || data?.yt || null;
+    return data?.youtubeUrl || (data as any)?.yt || null;
   }, [data]);
 
+  // FIX DEFINITIVO DO CONTADOR:
   const startDate = useMemo(() => {
-    const s = data?.date || data?.startDate || "";
+    const s = data?.date || (data as any)?.startDate || ""; 
     if (!s) return new Date();
+
     try {
-      const datePart = s.split("T")[0];
-      const [year, month, day] = datePart.split("-").map(Number);
+      // Pega apenas a parte YYYY-MM-DD ignorando qualquer resto
+      const datePart = s.split('T')[0]; 
+      const [year, month, day] = datePart.split('-').map(Number);
+
+      // Cria a data usando números (Ano, Mês-1, Dia)
+      // O mês no JavaScript começa em 0 (Janeiro = 0, Fevereiro = 1...)
       const d = new Date(year, month - 1, day, 0, 0, 0);
+      
       return isNaN(d.getTime()) ? new Date() : d;
-    } catch {
+    } catch (e) {
+      console.error("Erro ao converter data:", e);
       return new Date();
     }
   }, [data]);
@@ -125,16 +277,14 @@ export default function PublicCouplePage() {
 
   useEffect(() => {
     if (total <= 1) return;
-    const id = setInterval(() => setIndex((i) => (i + 1) % total), 4000);
+    const id = setInterval(() => setIndex((i) => (i + 1) % total), 3000);
     return () => clearInterval(id);
   }, [total]);
 
   const next = () => total > 1 && setIndex((i) => (i + 1) % total);
   const prev = () => total > 1 && setIndex((i) => (i - 1 + total) % total);
 
-  function onTouchStart(e: React.TouchEvent) {
-    touchStartX.current = e.touches[0]?.clientX ?? null;
-  }
+  function onTouchStart(e: React.TouchEvent) { touchStartX.current = e.touches[0]?.clientX ?? null; }
   function onTouchEnd(e: React.TouchEvent) {
     if (touchStartX.current === null || total <= 1) return;
     const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
@@ -144,140 +294,84 @@ export default function PublicCouplePage() {
   }
 
   function tryStartMusic() {
-    if (!premium || !finalYoutubeUrl || musicStarted) return;
+    if (!premium || !finalYoutubeUrl || musicStarted) return; 
     const id = extractYouTubeId(finalYoutubeUrl);
     if (!id || !ytIframeRef.current?.contentWindow) return;
-    const post = (msg: object) =>
-      ytIframeRef.current!.contentWindow!.postMessage(JSON.stringify(msg), "*");
+    const post = (msg: any) => ytIframeRef.current!.contentWindow!.postMessage(JSON.stringify(msg), "*");
     post({ event: "command", func: "setVolume", args: [100] });
     post({ event: "command", func: "unMute", args: [] });
     post({ event: "command", func: "playVideo", args: [] });
     setMusicStarted(true);
   }
 
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
-  if (apiError) {
+  if (loading) return <main className="min-h-[100svh] flex items-center justify-center bg-[#FDFCFB] text-red-600 font-bold">Carregando...</main>;
+  
+  if (!data || (data.status !== "APPROVED" && data.token !== "preview")) {
     return (
-      <main className="love-cinematic-bg flex min-h-[100svh] flex-col items-center justify-center px-6 text-center">
-        <p className="font-display text-2xl text-white">{apiError}</p>
+      <main className="min-h-[100svh] flex flex-col items-center justify-center bg-[#FDFCFB] text-center p-6">
+        <div className="animate-bounce mb-4 text-5xl">❤️</div>
+        <h1 className="text-2xl font-bold text-red-600 mb-2">Quase lá!</h1>
+        <p className="text-gray-500 max-w-xs">Estamos aguardando a confirmação do seu pagamento...</p>
       </main>
     );
-  }
-
-  if (!data || (data.status !== "APPROVED" && data.token !== "preview")) {
-    return <PendingPaymentScreen />;
   }
 
   const currentPhoto = total > 0 ? photos[index] : null;
   const ytId = premium && finalYoutubeUrl ? extractYouTubeId(finalYoutubeUrl) : null;
 
   return (
-    <main className="love-cinematic-bg min-h-[100svh]">
-      <div className="flex min-h-[100svh] items-center justify-center px-4 py-8 sm:px-6">
-        <article className="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-[var(--border)] bg-black/40 shadow-2xl premium-glow sm:rounded-[2.25rem]">
-          <section
-            className="relative"
-            onTouchStart={onTouchStart}
-            onTouchEnd={onTouchEnd}
-            onClick={tryStartMusic}
-          >
-            {ytId && (
-              <iframe
-                ref={ytIframeRef}
-                title="Música"
-                className="pointer-events-none absolute -left-[9999px] h-px w-px opacity-0"
-                src={`https://www.youtube.com/embed/${ytId}?enablejsapi=1&autoplay=0&controls=0&rel=0&playsinline=1&loop=1&playlist=${ytId}&mute=0&origin=${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "")}`}
-                allow="autoplay; encrypted-media"
-              />
-            )}
-
-            <div className="relative h-[min(100svh,820px)] overflow-hidden bg-zinc-950 sm:aspect-[9/16] sm:h-auto sm:max-h-[85svh]">
-              {currentPhoto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={currentPhoto}
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover transition-opacity duration-700"
-                  draggable={false}
+    <main className="bg-[#FDFCFB] min-h-[100svh]">
+      <div className="min-h-[100svh] sm:flex sm:items-center sm:justify-center sm:px-6 sm:py-10">
+        <div className="w-full sm:w-auto">
+          <div className="relative sm:rounded-[36px] sm:border sm:border-gray-200 sm:bg-white sm:shadow-2xl overflow-hidden">
+            <section className="relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onClick={tryStartMusic}>
+              {ytId && (
+                <iframe
+                  ref={ytIframeRef}
+                  className="absolute -left-[9999px] -top-[9999px] w-[1px] h-[1px] opacity-0"
+                  src={`https://www.youtube.com/embed/${ytId}?enablejsapi=1&autoplay=0&controls=0&rel=0&playsinline=1&loop=1&playlist=${ytId}&mute=0&origin=${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "")}`}
+                  allow="autoplay; encrypted-media"
                 />
-              ) : (
-                <span className="absolute inset-0 flex items-center justify-center bg-zinc-900 text-xs uppercase tracking-[0.3em] text-zinc-600">
-                  Sua foto
-                </span>
               )}
 
-              <span
-                className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/10 to-black/85"
-                aria-hidden
-              />
-              <HeartsOverlay enabled={premium} />
+              <div className="relative h-[100svh] sm:aspect-[9/16] sm:h-[720px] overflow-hidden bg-gray-100">
+                {currentPhoto ? (
+                  <img src={currentPhoto} alt="Foto" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-50 text-gray-300 text-[10px] uppercase tracking-widest text-center px-4">
+                    Sua foto aparecerá aqui
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80 z-[1]" />
+                <HeartsOverlayInHero enabled={premium} />
 
-              {total > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      prev();
-                    }}
-                    className="absolute left-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-xl text-white backdrop-blur-md transition hover:bg-black/50"
-                    aria-label="Foto anterior"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      next();
-                    }}
-                    className="absolute right-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-xl text-white backdrop-blur-md transition hover:bg-black/50"
-                    aria-label="Próxima foto"
-                  >
-                    ›
-                  </button>
-                  <ul className="absolute bottom-[11.5rem] left-0 right-0 z-20 flex justify-center gap-1.5">
-                    {photos.map((_, i) => (
-                      <li key={i}>
-                        <span
-                          className={`block h-1 rounded-full transition-all ${
-                            i === index ? "w-6 bg-[var(--accent)]" : "w-1.5 bg-white/40"
-                          }`}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
+                {total > 1 && (
+                  <>
+                    <button onClick={(e) => { e.stopPropagation(); prev(); }} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/20 text-white z-20">‹</button>
+                    <button onClick={(e) => { e.stopPropagation(); next(); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/20 text-white z-20">›</button>
+                  </>
+                )}
 
-              {premium && finalYoutubeUrl && !musicStarted && (
-                <p className="absolute top-20 left-0 right-0 z-20 text-center text-[10px] uppercase tracking-[0.2em] text-white/50">
-                  Toque para iniciar a música
-                </p>
-              )}
+                <div className="absolute inset-x-0 top-0 pt-14 sm:pt-10 px-6 z-20 text-center text-white">
+                  <h1 className="text-4xl sm:text-5xl font-bold drop-shadow-md italic">{data.names}</h1>
+                </div>
 
-              <header className="absolute inset-x-0 top-0 z-20 px-6 pt-14 text-center sm:pt-12">
-                <h1 className="font-display text-4xl font-medium italic text-white drop-shadow-lg sm:text-5xl">
-                  {data.names}
-                </h1>
-              </header>
-
-              <footer className="absolute inset-x-0 bottom-0 z-20 px-5 pb-10 sm:pb-8">
-                <ul className="mx-auto grid max-w-md list-none grid-cols-3 gap-2 p-0">
-                  <TimerTile label="Anos" value={time.years} premium={premium} />
-                  <TimerTile label="Meses" value={time.months} premium={premium} />
-                  <TimerTile label="Dias" value={time.days} premium={premium} />
-                  <TimerTile label="Horas" value={pad2(time.hours)} premium={premium} />
-                  <TimerTile label="Min" value={pad2(time.mins)} premium={premium} />
-                  <TimerTile label="Seg" value={pad2(time.secs)} premium={premium} />
-                </ul>
-              </footer>
-            </div>
-          </section>
-        </article>
+                <div className="absolute inset-x-0 bottom-0 pb-12 sm:pb-8 px-6 z-20">
+                  <div className="mx-auto max-w-md">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <TimerTile label="ANOS" value={time.years} premium={premium} />
+                      <TimerTile label="MESES" value={time.months} premium={premium} />
+                      <TimerTile label="DIAS" value={time.days} premium={premium} />
+                      <TimerTile label="HORAS" value={pad2(time.hours)} premium={premium} />
+                      <TimerTile label="MIN" value={pad2(time.mins)} premium={premium} />
+                      <TimerTile label="SEG" value={pad2(time.secs)} premium={premium} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
     </main>
   );
