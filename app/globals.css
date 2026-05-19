@@ -1,0 +1,342 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0f;
+  --bg-elevated: #101018;
+  --surface: rgba(18, 18, 28, 0.65);
+  --surface-solid: #14141f;
+  --text: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.78);
+  --text-muted: rgba(255, 255, 255, 0.52);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-accent: rgba(255, 47, 146, 0.28);
+  --accent: #ff2f92;
+  --accent-soft: rgba(255, 47, 146, 0.14);
+  --accent-hover: #ff4da3;
+  --glow: rgba(255, 47, 146, 0.35);
+  --glow2: rgba(139, 92, 246, 0.22);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-accent: var(--accent);
+  --color-surface: var(--surface-solid);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* —— Premium surfaces —— */
+.love-surface {
+  background: color-mix(in srgb, var(--surface-solid) 88%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+}
+
+.love-glass {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.love-muted {
+  color: var(--text-muted);
+}
+
+.premium-glow {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 48px var(--glow),
+    0 0 80px var(--glow2);
+}
+
+.premium-border {
+  border: 1px solid var(--border-accent);
+}
+
+/* —— Cinematic background —— */
+.love-cinematic-bg {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -15%, rgba(255, 47, 146, 0.16), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 100% 30%, rgba(139, 92, 246, 0.1), transparent 50%),
+    radial-gradient(ellipse 40% 35% at 0% 70%, rgba(255, 47, 146, 0.06), transparent 45%),
+    var(--bg);
+}
+
+.love-grain::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: 0;
+}
+
+/* —— Typography —— */
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+}
+
+/* —— Animations —— */
+@keyframes love-fall {
+  0% {
+    transform: translateY(-12vh) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--op, 0.7);
+  }
+  100% {
+    transform: translateY(110vh) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes love-fall-preview {
+  0% {
+    transform: translateY(-20px) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(580px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes love-pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 24px rgba(255, 47, 146, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 47, 146, 0.45);
+  }
+}
+
+@keyframes love-shimmer {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+.animate-love-fall {
+  animation: love-fall-preview 6s linear infinite;
+  top: -40px;
+}
+
+.animate-pulse-glow {
+  animation: love-pulse-glow 3s ease-in-out infinite;
+}
+
+/* —— Form inputs (create flow) —— */
+.love-input {
+  width: 100%;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  padding: 0.9rem 1.15rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.love-input::placeholder {
+  color: var(--text-muted);
+}
+
+.love-input:focus {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.love-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* —— Interactive surfaces —— */
+.love-card-hover {
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.25s ease,
+    box-shadow 0.35s ease,
+    background 0.25s ease;
+}
+
+.love-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-accent);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 16px 48px rgba(0, 0, 0, 0.45),
+    0 0 32px var(--glow);
+}
+
+.love-btn {
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.2s ease,
+    box-shadow 0.25s ease,
+    opacity 0.2s ease;
+}
+
+.love-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.love-btn:active:not(:disabled) {
+  transform: scale(0.98) translateY(0);
+}
+
+/* —— Step transitions —— */
+@keyframes love-step-in-forward {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes love-step-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes love-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes love-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes love-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes love-progress-shine {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.love-step-forward {
+  animation: love-step-in-forward 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.love-step-back {
+  animation: love-step-in-back 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.love-fade-up {
+  animation: love-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.love-overlay-in {
+  animation: love-overlay-in 0.35s ease both;
+}
+
+.love-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: love-spin 0.7s linear infinite;
+}
+
+.love-progress-track {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  height: 3px;
+}
+
+.love-progress-fill {
+  position: relative;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #c084fc);
+  transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.love-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  animation: love-progress-shine 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .love-step-forward,
+  .love-step-back,
+  .love-fade-up,
+  .love-overlay-in,
+  .love-progress-fill::after,
+  .love-spinner {
+    animation: none !important;
+  }
+
+  .love-card-hover:hover {
+    transform: none;
+  }
+}

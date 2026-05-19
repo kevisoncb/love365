@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model LovePage {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  token       String   @unique
+  plan        String   // "BASIC" ou "PREMIUM"
+  names       String
+  startDate   String   // Armazenamos como string ou DateTime
+  photos      String[] // URLs que virão do Cloudflare R2
+  youtubeUrl  String?
+  contact     String
+  paid        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
