@@ -6,7 +6,7 @@ import {
   verifyAdminSessionToken,
 } from "@/lib/admin-auth";
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname === "/admin/login") {
@@ -17,7 +17,7 @@ export function middleware(request: NextRequest) {
     request.headers.get("cookie")
   );
 
-  if (!verifyAdminSessionToken(session)) {
+  if (!(await verifyAdminSessionToken(session))) {
     const login = new URL("/admin/login", request.url);
     return NextResponse.redirect(login);
   }

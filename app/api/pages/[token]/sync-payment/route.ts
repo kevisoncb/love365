@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 
-import {
-  API_DYNAMIC,
-  API_RUNTIME,
-  NO_STORE_HEADERS,
-} from "@/lib/api-config";
+import { NO_STORE_HEADERS } from "@/lib/api-config";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -17,8 +13,8 @@ import { createLogger } from "@/lib/logger";
 import { captureServerErrorAsync } from "@/lib/error-tracking";
 import { toApiClientError } from "@/lib/client-errors";
 
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const log = createLogger("SYNC");
 const MIN_SYNC_INTERVAL_MS = 8_000;

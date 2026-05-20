@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { s3Client } from "@/lib/r2";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { v4 as uuidv4 } from "uuid";
-import {
-  API_DYNAMIC,
-  API_RUNTIME,
-  NO_STORE_HEADERS,
-} from "@/lib/api-config";
+import { NO_STORE_HEADERS } from "@/lib/api-config";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -15,8 +11,8 @@ import { validateImageFile } from "@/lib/upload-validation";
 import { createLogger } from "@/lib/logger";
 import { captureServerErrorAsync } from "@/lib/error-tracking";
 
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const log = createLogger("UPLOAD");
 

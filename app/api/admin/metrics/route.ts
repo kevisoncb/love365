@@ -1,23 +1,19 @@
 import { NextResponse } from "next/server";
 
-import {
-  API_DYNAMIC,
-  API_RUNTIME,
-  NO_STORE_HEADERS,
-} from "@/lib/api-config";
+import { NO_STORE_HEADERS } from "@/lib/api-config";
 import { isAdminAuthorized } from "@/lib/admin-auth";
 import { connectToDatabase, OpsErrorLog, Page } from "@/lib/db";
 import { isPaidPageStatus } from "@/lib/page-status";
 import { createLogger } from "@/lib/logger";
 import type { PageDocument } from "@/types/page";
 
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const log = createLogger("ADMIN");
 
 export async function GET(req: Request) {
-  if (!isAdminAuthorized(req)) {
+  if (!(await isAdminAuthorized(req))) {
     return NextResponse.json(
       { error: "Não autorizado" },
       { status: 401, headers: NO_STORE_HEADERS }

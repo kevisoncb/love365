@@ -2,15 +2,11 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
-import {
-  API_DYNAMIC,
-  API_RUNTIME,
-  NO_STORE_HEADERS,
-} from "@/lib/api-config";
+import { NO_STORE_HEADERS } from "@/lib/api-config";
 
 /** Legado: leitura local JSON (dev). Produção usa /api/pages/[token]. */
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

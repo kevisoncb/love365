@@ -1,35 +1,63 @@
-import crypto from "crypto";
+/**
+ * Auth do painel admin — Web Crypto (Edge + Node), sem node:crypto.
+ */
 
 const COOKIE_NAME = "love365_admin";
 const COOKIE_MAX_AGE = 60 * 60 * 12; // 12h
+const SESSION_MESSAGE = "love365-admin-session-v1";
 
 function getAdminSecret(): string | null {
   const s = process.env.ADMIN_SECRET?.trim();
   return s || null;
 }
 
-export function createAdminSessionToken(): string | null {
-  const secret = getAdminSecret();
-  if (!secret) return null;
-  return crypto
-    .createHmac("sha256", secret)
-    .update("love365-admin-session-v1")
-    .digest("hex");
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
-export function verifyAdminSessionToken(
+async function hmacSha256Hex(
+  secret: string,
+  message: string
+): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return "";
+
+  const key = await subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signature = await subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(message)
+  );
+
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function createAdminSessionToken(): Promise<string | null> {
+  const secret = getAdminSecret();
+  if (!secret) return null;
+  return hmacSha256Hex(secret, SESSION_MESSAGE);
+}
+
+export async function verifyAdminSessionToken(
   token: string | null | undefined
-): boolean {
-  const expected = createAdminSessionToken();
+): Promise<boolean> {
+  const expected = await createAdminSessionToken();
   if (!expected || !token) return false;
-  try {
-    const a = Buffer.from(token);
-    const b = Buffer.from(expected);
-    if (a.length !== b.length) return false;
-    return crypto.timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
+  return timingSafeEqual(token, expected);
 }
 
 export function parseAdminCookie(
@@ -46,31 +74,24 @@ export function parseAdminCookie(
   return null;
 }
 
-export function isAdminAuthorized(req: Request): boolean {
+export async function isAdminAuthorized(
+  req: Request
+): Promise<boolean> {
   return verifyAdminSessionToken(
     parseAdminCookie(req.headers.get("cookie"))
   );
 }
 
-export function buildAdminSessionCookie(): string | null {
-  const token = createAdminSessionToken();
+export async function buildAdminSessionCookie(): Promise<string | null> {
+  const token = await createAdminSessionToken();
   if (!token) return null;
   const secure =
     process.env.NODE_ENV === "production" ? "; Secure" : "";
   return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}${secure}`;
 }
 
-export function verifyAdminPassword(
-  password: string
-): boolean {
+export function verifyAdminPassword(password: string): boolean {
   const secret = getAdminSecret();
   if (!secret || !password) return false;
-  try {
-    const a = Buffer.from(password);
-    const b = Buffer.from(secret);
-    if (a.length !== b.length) return false;
-    return crypto.timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
+  return timingSafeEqual(password, secret);
 }

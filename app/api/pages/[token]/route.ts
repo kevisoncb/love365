@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 
-import {
-  API_DYNAMIC,
-  API_RUNTIME,
-  NO_STORE_HEADERS,
-} from "@/lib/api-config";
+import { NO_STORE_HEADERS } from "@/lib/api-config";
 import { connectToDatabase, Page } from "@/lib/db";
 import { isPaidPageStatus } from "@/lib/page-status";
 import type { PageDocument } from "@/types/page";
 
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(
   request: Request,

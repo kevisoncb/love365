@@ -1,8 +1,7 @@
 import { ImageResponse } from "next/og";
 
-import { API_RUNTIME } from "@/lib/api-config";
-
-export const runtime = API_RUNTIME;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   return new ImageResponse(

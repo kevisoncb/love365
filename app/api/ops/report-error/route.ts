@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 
-import {
-  API_DYNAMIC,
-  API_RUNTIME,
-  NO_STORE_HEADERS,
-} from "@/lib/api-config";
+import { NO_STORE_HEADERS } from "@/lib/api-config";
 import { captureServerErrorAsync } from "@/lib/error-tracking";
 import { createLogger } from "@/lib/logger";
 
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const log = createLogger("ERROR");
 

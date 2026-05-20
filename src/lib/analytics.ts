@@ -129,4 +129,8 @@ export function trackServerEvent(
   });
 }
 
-export { AnalyticsEvents, FunnelEvents };
+export {
+  AnalyticsEvents,
+  FunnelEvents,
+  funnelStepEvent,
+} from "@/lib/analytics-events";

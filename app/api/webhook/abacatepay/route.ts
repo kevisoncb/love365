@@ -1,8 +1,6 @@
 import { handleAbacatePayWebhook } from "@/lib/webhook-abacatepay";
-import { API_DYNAMIC, API_RUNTIME } from "@/lib/api-config";
-
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const { response } = await handleAbacatePayWebhook(req);

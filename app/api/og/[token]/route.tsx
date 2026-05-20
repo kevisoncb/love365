@@ -1,11 +1,10 @@
 import { ImageResponse } from "next/og";
 
-import { API_DYNAMIC, API_RUNTIME } from "@/lib/api-config";
 import { connectToDatabase, Page } from "@/lib/db";
 import type { PageDocument } from "@/types/page";
 
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(
   _req: Request,

@@ -14,10 +14,6 @@ import {
   getSiteBaseUrl,
   logAbacateEnvDiagnostics,
 } from "@/lib/abacatepay";
-import {
-  API_DYNAMIC,
-  API_RUNTIME,
-} from "@/lib/api-config";
 
 import {
   checkRateLimit,
@@ -35,8 +31,8 @@ import { toApiClientError } from "@/lib/client-errors";
 
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
-export const runtime = API_RUNTIME;
-export const dynamic = API_DYNAMIC;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const log = createLogger("CREATE_PAGE");
 
