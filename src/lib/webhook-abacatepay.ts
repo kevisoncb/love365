@@ -6,16 +6,31 @@ import {
   Page,
   ProcessedWebhookEvent,
 } from "@/lib/db";
+import { trackServerEvent } from "@/lib/analytics";
+import { AnalyticsEvents } from "@/lib/analytics-events";
 import { sendSuccessEmail } from "@/lib/mail-service";
+import {
+  asJsonObject,
+  getNestedString,
+  pickFirstString,
+} from "@/lib/safe-object";
 import {
   isAbacatePaymentApproved,
   isPaidPageStatus,
   CANONICAL_PAID_STATUS,
 } from "@/lib/page-status";
+import type {
+  AbacateCheckoutPayload,
+  AbacateWebhookBody,
+  AbacateWebhookData,
+  JsonObject,
+} from "@/types/abacatepay";
+import type { PageDocument } from "@/types/page";
+import { createLogger } from "@/lib/logger";
+import { captureServerErrorAsync } from "@/lib/error-tracking";
 
-const LOG = "[WEBHOOK]";
+const log = createLogger("WEBHOOK");
 
-/** Chave pública documentada em https://docs.abacatepay.com/pages/webhooks/security */
 const DEFAULT_ABACATEPAY_WEBHOOK_PUBLIC_KEY =
   "t9dXRhHHo3yDEj5pVDYz0frf7q6bMKyMRmxxCPIPp3RCplBfXRxqlC6ZpiWmOqj4L63qEaeUOtrCI8P0VMUgo6iIga2ri9ogaHFs0WIIywSMg0q7RmBfybe1E5XJcfC4IW3alNqym0tXoAKkzvfEjZxV6bE0oG2zJrNNYmUCKZyV0KZ3JS8Votf9EAWWYdiDkMkpbMdPggfh1EqHlVkMiTady6jOR3hyzGEHrIz2Ret0xHKMbiqkr9HS1JhNHDX9";
 
@@ -23,17 +38,6 @@ export type WebhookHandleResult = {
   response: NextResponse;
   logSummary: Record<string, unknown>;
 };
-
-function pickFirstString(
-  ...values: unknown[]
-): string | null {
-  for (const v of values) {
-    if (typeof v === "string" && v.trim()) {
-      return v.trim();
-    }
-  }
-  return null;
-}
 
 function getWebhookPublicKey(): string {
   return (
@@ -47,9 +51,7 @@ function getWebhookSecret(): string | null {
     process.env.ABACATEPAY_WEBHOOK_SECRET ||
     process.env.WEBHOOK_SECRET ||
     null;
-  return secret && secret.trim()
-    ? secret.trim()
-    : null;
+  return secret?.trim() || null;
 }
 
 export function verifyAbacateWebhookSignature(
@@ -107,31 +109,73 @@ export function verifyWebhookSecretParam(
   }
 }
 
+function parseWebhookData(
+  raw: unknown
+): AbacateWebhookData {
+  const obj = asJsonObject(raw);
+  if (!obj) {
+    return {};
+  }
+  return obj as AbacateWebhookData;
+}
+
 export function parseAbacateWebhookPayload(
   rawText: string
-): { body: Record<string, unknown>; data: Record<string, unknown> } {
-  let body: Record<string, unknown> = {};
+): {
+  body: AbacateWebhookBody;
+  data: AbacateWebhookData;
+} {
+  let body: AbacateWebhookBody = {};
+
   try {
-    body = rawText
-      ? (JSON.parse(rawText) as Record<string, unknown>)
+    const parsed: unknown = rawText
+      ? JSON.parse(rawText)
       : {};
+    body = asJsonObject(parsed) as AbacateWebhookBody;
   } catch {
-    body = { _parseError: true };
+    body = { _parseError: true } as AbacateWebhookBody;
   }
 
   const data =
-    body.data &&
-    typeof body.data === "object" &&
-    !Array.isArray(body.data)
-      ? (body.data as Record<string, unknown>)
-      : body;
+    body.data && typeof body.data === "object"
+      ? parseWebhookData(body.data)
+      : parseWebhookData(body);
 
   return { body, data };
 }
 
+function extractProductExternalId(
+  products: unknown
+): string | null {
+  if (!Array.isArray(products) || !products[0]) {
+    return null;
+  }
+  const first = products[0];
+  const record = asJsonObject(first);
+  return pickFirstString(record?.externalId);
+}
+
+function checkoutRecord(
+  data: AbacateWebhookData
+): AbacateCheckoutPayload | null {
+  if (data.checkout && typeof data.checkout === "object") {
+    return data.checkout;
+  }
+  return null;
+}
+
+function billingRecord(
+  data: AbacateWebhookData
+): AbacateCheckoutPayload | null {
+  if (data.billing && typeof data.billing === "object") {
+    return data.billing;
+  }
+  return null;
+}
+
 export function extractWebhookEventId(
-  body: Record<string, unknown>,
-  data: Record<string, unknown>
+  body: AbacateWebhookBody,
+  data: AbacateWebhookData
 ): string | null {
   return pickFirstString(
     body.id,
@@ -143,52 +187,21 @@ export function extractWebhookEventId(
 }
 
 export function extractWebhookToken(
-  body: Record<string, unknown>,
-  data: Record<string, unknown>
+  body: AbacateWebhookBody,
+  data: AbacateWebhookData
 ): string | null {
-  const checkout =
-    data.checkout &&
-    typeof data.checkout === "object"
-      ? (data.checkout as Record<string, unknown>)
-      : null;
+  const checkout = checkoutRecord(data);
+  const billing = billingRecord(data);
+  const metadata = data.metadata;
 
-  const billing =
-    data.billing &&
-    typeof data.billing === "object"
-      ? (data.billing as Record<string, unknown>)
-      : null;
-
-  const metadata =
-    data.metadata &&
-    typeof data.metadata === "object"
-      ? (data.metadata as Record<string, unknown>)
-      : null;
-
-  const products = (() => {
-    const lists = [
-      checkout?.products,
-      billing?.products,
-      data.products,
-      body.products,
-    ];
-    for (const list of lists) {
-      if (Array.isArray(list) && list[0]) {
-        const first = list[0];
-        if (
-          first &&
-          typeof first === "object" &&
-          "externalId" in first
-        ) {
-          const ext = (first as Record<string, unknown>)
-            .externalId;
-          if (typeof ext === "string" && ext.trim()) {
-            return ext.trim();
-          }
-        }
-      }
-    }
-    return null;
-  })();
+  const fromProducts = pickFirstString(
+    extractProductExternalId(checkout?.products),
+    extractProductExternalId(billing?.products),
+    extractProductExternalId(data.products),
+    extractProductExternalId(
+      (body as JsonObject).products
+    )
+  );
 
   return pickFirstString(
     checkout?.externalId,
@@ -197,25 +210,16 @@ export function extractWebhookToken(
     metadata?.externalId,
     metadata?.token,
     body.externalId,
-    products
+    fromProducts
   );
 }
 
 export function extractWebhookBillingId(
-  body: Record<string, unknown>,
-  data: Record<string, unknown>
+  body: AbacateWebhookBody,
+  data: AbacateWebhookData
 ): string | null {
-  const checkout =
-    data.checkout &&
-    typeof data.checkout === "object"
-      ? (data.checkout as Record<string, unknown>)
-      : null;
-
-  const billing =
-    data.billing &&
-    typeof data.billing === "object"
-      ? (data.billing as Record<string, unknown>)
-      : null;
+  const checkout = checkoutRecord(data);
+  const billing = billingRecord(data);
 
   return pickFirstString(
     checkout?.id,
@@ -226,32 +230,24 @@ export function extractWebhookBillingId(
 }
 
 export function extractWebhookPaymentStatus(
-  body: Record<string, unknown>,
-  data: Record<string, unknown>
+  body: AbacateWebhookBody,
+  data: AbacateWebhookData
 ): string | null {
-  const checkout =
-    data.checkout &&
-    typeof data.checkout === "object"
-      ? (data.checkout as Record<string, unknown>)
-      : null;
-
-  const billing =
-    data.billing &&
-    typeof data.billing === "object"
-      ? (data.billing as Record<string, unknown>)
-      : null;
+  const checkout = checkoutRecord(data);
+  const billing = billingRecord(data);
+  const dataObj = data as JsonObject;
 
   return pickFirstString(
     checkout?.status,
     billing?.status,
     data.status,
-    data.payment?.status,
+    getNestedString(dataObj, "payment"),
     body.status
   );
 }
 
 export function extractWebhookEventName(
-  body: Record<string, unknown>
+  body: AbacateWebhookBody
 ): string | null {
   return pickFirstString(body.event, body.type);
 }
@@ -279,11 +275,11 @@ export async function markPageAsPaid(
   token: string,
   billingId?: string | null
 ): Promise<{
-  page: Record<string, unknown> | null;
+  page: PageDocument | null;
   newlyPaid: boolean;
 }> {
   const now = new Date();
-  const setFields: Record<string, unknown> = {
+  const setFields: Partial<PageDocument> = {
     status: CANONICAL_PAID_STATUS,
     paidAt: now,
   };
@@ -296,60 +292,38 @@ export async function markPageAsPaid(
     {
       token,
       status: {
-        $nin: [
-          CANONICAL_PAID_STATUS,
-          "APPROVED",
-        ],
+        $nin: [CANONICAL_PAID_STATUS, "APPROVED"],
       },
     },
     { $set: setFields },
     { new: true }
-  ).lean();
+  ).lean<PageDocument>();
 
   if (updated) {
-    return {
-      page: updated as Record<string, unknown>,
-      newlyPaid: true,
-    };
+    return { page: updated, newlyPaid: true };
   }
 
-  const existing = await Page.findOne({ token }).lean();
+  const existing = await Page.findOne({ token }).lean<PageDocument>();
 
-  if (
-    existing &&
-    isPaidPageStatus(
-      existing.status as string | undefined
-    )
-  ) {
-    return {
-      page: existing as Record<string, unknown>,
-      newlyPaid: false,
-    };
+  if (existing && isPaidPageStatus(existing.status)) {
+    return { page: existing, newlyPaid: false };
   }
 
   return { page: null, newlyPaid: false };
 }
 
 async function maybeSendPaidEmail(
-  page: Record<string, unknown>
+  page: PageDocument
 ): Promise<void> {
-  const contact = page.contact;
-  const token = page.token;
-  const names = page.names;
-  const emailSentAt = page.emailSentAt;
-
-  if (emailSentAt) {
-    console.log(
-      `${LOG} [EMAIL] Já enviado anteriormente`,
-      { token }
-    );
+  if (page.emailSentAt) {
+    log.info("email skip", { token: page.token });
     return;
   }
 
+  const contact = page.contact;
   if (
     typeof contact !== "string" ||
-    !contact.includes("@") ||
-    typeof token !== "string"
+    !contact.includes("@")
   ) {
     return;
   }
@@ -357,47 +331,33 @@ async function maybeSendPaidEmail(
   try {
     await sendSuccessEmail(
       contact,
-      typeof names === "string"
-        ? names
-        : "Love365",
-      token
+      page.names || "Love365",
+      page.token
     );
     await Page.updateOne(
-      { token },
+      { token: page.token },
       { $set: { emailSentAt: new Date() } }
     );
-    console.log(`${LOG} [EMAIL] Enviado`, {
-      token,
-      contact: `${contact.slice(0, 3)}…`,
-    });
+    log.info("email sent", { token: page.token });
   } catch (e) {
-    console.error(`${LOG} [EMAIL] Falha`, {
-      token,
-      error: e,
-    });
+    log.error("email failed", { token: page.token, error: e });
   }
 }
 
 export async function handleAbacatePayWebhook(
   req: Request
 ): Promise<WebhookHandleResult> {
-  const startedAt = Date.now();
-
   try {
     const rawText = await req.text();
 
-    console.log(`${LOG} [RECEIVED]`, {
-      method: req.method,
-      url: req.url.split("?")[0],
-      bodyLength: rawText.length,
-      preview: rawText.slice(0, 500),
+    log.info("received", {
+      route: req.url.split("?")[0],
+      meta: { bodyLength: rawText.length },
     });
 
     const webhookSecret = getWebhookSecret();
     if (!webhookSecret) {
-      console.error(
-        `${LOG} [ERROR] ABACATEPAY_WEBHOOK_SECRET / WEBHOOK_SECRET ausente`
-      );
+      log.error("secret missing", { route: "/api/webhook" });
       return {
         response: NextResponse.json(
           { error: "Webhook secret not configured" },
@@ -408,9 +368,7 @@ export async function handleAbacatePayWebhook(
     }
 
     if (!verifyWebhookSecretParam(req.url)) {
-      console.error(
-        `${LOG} [ERROR] webhookSecret inválido ou ausente na query`
-      );
+      log.warn("invalid webhook secret param");
       return {
         response: NextResponse.json(
           { error: "Unauthorized" },
@@ -425,15 +383,9 @@ export async function handleAbacatePayWebhook(
       req.headers.get("x-webhook-signature");
 
     if (
-      !verifyAbacateWebhookSignature(
-        rawText,
-        signature
-      )
+      !verifyAbacateWebhookSignature(rawText, signature)
     ) {
-      console.error(
-        `${LOG} [ERROR] Assinatura HMAC inválida`,
-        { hasSignature: Boolean(signature) }
-      );
+      log.warn("invalid hmac signature");
       return {
         response: NextResponse.json(
           { error: "Invalid signature" },
@@ -448,61 +400,41 @@ export async function handleAbacatePayWebhook(
     const { body, data } =
       parseAbacateWebhookPayload(rawText);
 
-    const eventId = extractWebhookEventId(
-      body,
-      data
-    );
+    const eventId = extractWebhookEventId(body, data);
 
     if (eventId) {
       const alreadyDone =
-        await ProcessedWebhookEvent.exists({
-          eventId,
-        });
+        await ProcessedWebhookEvent.exists({ eventId });
       if (alreadyDone) {
-        console.log(
-          `${LOG} [RECEIVED] Evento já processado`,
-          { eventId }
-        );
+        log.info("duplicate", { meta: { eventId } });
         return {
           response: NextResponse.json({
             received: true,
             duplicate: true,
           }),
-          logSummary: {
-            duplicate: true,
-            eventId,
-          },
+          logSummary: { duplicate: true, eventId },
         };
       }
     }
+
     const token = extractWebhookToken(body, data);
-    const billingId = extractWebhookBillingId(
+    const billingId = extractWebhookBillingId(body, data);
+    const statusRaw = extractWebhookPaymentStatus(
       body,
       data
     );
-    const statusRaw =
-      extractWebhookPaymentStatus(body, data);
-    const eventName =
-      extractWebhookEventName(body);
+    const eventName = extractWebhookEventName(body);
 
-    console.log(`${LOG} [RECEIVED] parsed`, {
-      eventId,
-      eventName,
+    log.info("parsed", {
       token,
-      billingId,
-      statusRaw,
+      meta: { eventId, eventName, billingId, statusRaw },
     });
 
     if (!token) {
-      console.warn(
-        `${LOG} [ERROR] Token/externalId não encontrado no payload`
-      );
+      log.warn("token_missing");
       return {
         response: NextResponse.json(
-          {
-            received: true,
-            warning: "token_missing",
-          },
+          { received: true, warning: "token_missing" },
           { status: 200 }
         ),
         logSummary: { warning: "token_missing" },
@@ -515,29 +447,23 @@ export async function handleAbacatePayWebhook(
     );
 
     if (!approved) {
-      console.log(
-        `${LOG} [RECEIVED] Pagamento ainda não confirmado`,
-        { token, statusRaw, eventName }
-      );
+      log.info("pending", {
+        token,
+        meta: { statusRaw, eventName },
+      });
       return {
         response: NextResponse.json({
           received: true,
           status: statusRaw,
           pending: true,
         }),
-        logSummary: {
-          token,
-          pending: true,
-          statusRaw,
-        },
+        logSummary: { token, pending: true, statusRaw },
       };
     }
 
-    console.log(`${LOG} [PAYMENT_CONFIRMED]`, {
+    log.info("payment confirmed", {
       token,
-      billingId,
-      statusRaw,
-      eventName,
+      meta: { billingId, statusRaw, eventName },
     });
 
     const { page, newlyPaid } = await markPageAsPaid(
@@ -546,47 +472,31 @@ export async function handleAbacatePayWebhook(
     );
 
     if (!page) {
-      console.warn(
-        `${LOG} [ERROR] Página não encontrada no Mongo`,
-        { token }
-      );
+      log.warn("page_not_found", { token });
       return {
         response: NextResponse.json(
-          {
-            received: true,
-            warning: "page_not_found",
-            token,
-          },
+          { received: true, warning: "page_not_found", token },
           { status: 200 }
         ),
-        logSummary: {
-          token,
-          warning: "page_not_found",
-        },
+        logSummary: { token, warning: "page_not_found" },
       };
     }
 
-    console.log(`${LOG} [DB_UPDATED]`, {
+    log.done("db updated", {
       token,
-      newlyPaid,
       status: page.status,
-      durationMs: Date.now() - startedAt,
+      meta: { newlyPaid },
     });
 
     if (eventId) {
-      const isFirst = await claimWebhookEvent(
-        eventId,
-        token
-      );
-      if (!isFirst) {
-        console.log(
-          `${LOG} [RECEIVED] Evento duplicado (pós-update)`,
-          { eventId, token }
-        );
-      }
+      await claimWebhookEvent(eventId, token);
     }
 
     if (newlyPaid) {
+      trackServerEvent(AnalyticsEvents.PAYMENT_APPROVED, {
+        token,
+        billingId: billingId ?? undefined,
+      });
       await maybeSendPaidEmail(page);
     }
 
@@ -597,17 +507,14 @@ export async function handleAbacatePayWebhook(
         token,
         newlyPaid,
       }),
-      logSummary: {
-        token,
-        newlyPaid,
-        ok: true,
-      },
+      logSummary: { token, newlyPaid, ok: true },
     };
   } catch (error) {
-    console.error(`${LOG} [ERROR]`, {
-      error,
-      durationMs: Date.now() - startedAt,
+    captureServerErrorAsync(error, {
+      scope: "WEBHOOK",
+      route: "/api/webhook/abacatepay",
     });
+    log.error("handler failed", { error });
 
     return {
       response: NextResponse.json(

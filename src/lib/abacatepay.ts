@@ -1,3 +1,12 @@
+import { buildTaxIdForCustomer } from "@/lib/cpf";
+import { fetchWithTimeout } from "@/lib/fetch-safe";
+import { createLogger } from "@/lib/logger";
+import type {
+  AbacateApiEnvelope,
+  AbacateCustomerCreateBody,
+  JsonObject,
+} from "@/types/abacatepay";
+
 const ABACATEPAY_API_BASE = "https://api.abacatepay.com/v1";
 
 export function getAbacateApiKey(): string | null {
@@ -67,6 +76,9 @@ export function logAbacateEnvDiagnostics(
     R2_PUBLIC_URL: process.env.R2_PUBLIC_URL
       ? "set"
       : "MISSING",
+    MONGODB_URI: process.env.MONGODB_URI
+      ? "set"
+      : "MISSING",
   });
 }
 
@@ -90,24 +102,52 @@ export function formatCellphoneForAbacate(
   return "(11) 99999-9999";
 }
 
-/** CPF/CNPJ em formato aceito pela API v1 (com máscara quando possível). */
+/** @deprecated use buildCustomerPayload */
 export function formatTaxIdForAbacate(
   raw?: string
 ): string {
-  const digits = (raw || "11144477735").replace(/\D/g, "");
-
-  if (digits.length === 11) {
-    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
-  }
-
-  if (digits.length === 14) {
-    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
-  }
-
-  return "111.444.777-35";
+  return buildTaxIdForCustomer(raw).masked;
 }
 
-/** Extrai id do cliente conforme OpenAPI v1: { data: { id }, error: null } */
+export function buildCustomerPayload(input: {
+  name: string;
+  email: string;
+  whatsapp?: string;
+  seed?: string;
+}): AbacateCustomerCreateBody {
+  const cellphone = formatCellphoneForAbacate(
+    input.whatsapp || ""
+  );
+  const tax = buildTaxIdForCustomer(
+    input.seed || input.email
+  );
+
+  console.log("[CELLPHONE]", {
+    raw: input.whatsapp ? "***" : "fallback",
+    formatted: cellphone,
+  });
+  console.log("[TAXID]", {
+    digits: `${tax.digits.slice(0, 3)}***${tax.digits.slice(-2)}`,
+    masked: tax.masked,
+  });
+
+  const payload: AbacateCustomerCreateBody = {
+    name: input.name,
+    email: input.email,
+    cellphone,
+    taxId: tax.masked,
+  };
+
+  console.log("[CUSTOMER_PAYLOAD]", {
+    name: payload.name,
+    email: `${payload.email.slice(0, 3)}…`,
+    cellphone: payload.cellphone,
+    taxId: payload.taxId,
+  });
+
+  return payload;
+}
+
 export function extractCustomerId(
   payload: unknown
 ): string | null {
@@ -115,7 +155,7 @@ export function extractCustomerId(
     return null;
   }
 
-  const root = payload as Record<string, unknown>;
+  const root = payload as JsonObject;
 
   if (typeof root.id === "string" && root.id.trim()) {
     return root.id.trim();
@@ -123,7 +163,7 @@ export function extractCustomerId(
 
   const data = root.data;
   if (data && typeof data === "object") {
-    const dataObj = data as Record<string, unknown>;
+    const dataObj = data as JsonObject;
 
     if (
       typeof dataObj.id === "string" &&
@@ -137,8 +177,7 @@ export function extractCustomerId(
       nestedCustomer &&
       typeof nestedCustomer === "object"
     ) {
-      const customerObj =
-        nestedCustomer as Record<string, unknown>;
+      const customerObj = nestedCustomer as JsonObject;
       if (
         typeof customerObj.id === "string" &&
         customerObj.id.trim()
@@ -150,7 +189,7 @@ export function extractCustomerId(
 
   const customer = root.customer;
   if (customer && typeof customer === "object") {
-    const customerObj = customer as Record<string, unknown>;
+    const customerObj = customer as JsonObject;
     if (
       typeof customerObj.id === "string" &&
       customerObj.id.trim()
@@ -162,7 +201,6 @@ export function extractCustomerId(
   return null;
 }
 
-/** Extrai URL de pagamento conforme OpenAPI v1: { data: { url }, error: null } */
 export function extractBillingUrl(
   payload: unknown
 ): string | null {
@@ -170,7 +208,7 @@ export function extractBillingUrl(
     return null;
   }
 
-  const root = payload as Record<string, unknown>;
+  const root = payload as JsonObject;
 
   if (typeof root.url === "string" && root.url.trim()) {
     return root.url.trim();
@@ -185,7 +223,7 @@ export function extractBillingUrl(
 
   const data = root.data;
   if (data && typeof data === "object") {
-    const dataObj = data as Record<string, unknown>;
+    const dataObj = data as JsonObject;
 
     if (
       typeof dataObj.url === "string" &&
@@ -203,7 +241,7 @@ export function extractBillingUrl(
 
     const billing = dataObj.billing;
     if (billing && typeof billing === "object") {
-      const billingObj = billing as Record<string, unknown>;
+      const billingObj = billing as JsonObject;
       if (
         typeof billingObj.url === "string" &&
         billingObj.url.trim()
@@ -216,7 +254,6 @@ export function extractBillingUrl(
   return null;
 }
 
-/** Extrai id da cobrança (bill_…) conforme OpenAPI v1/v2. */
 export function extractBillingId(
   payload: unknown
 ): string | null {
@@ -224,7 +261,7 @@ export function extractBillingId(
     return null;
   }
 
-  const root = payload as Record<string, unknown>;
+  const root = payload as JsonObject;
 
   if (typeof root.id === "string" && root.id.trim()) {
     return root.id.trim();
@@ -232,7 +269,7 @@ export function extractBillingId(
 
   const data = root.data;
   if (data && typeof data === "object") {
-    const dataObj = data as Record<string, unknown>;
+    const dataObj = data as JsonObject;
     if (
       typeof dataObj.id === "string" &&
       dataObj.id.trim()
@@ -241,7 +278,7 @@ export function extractBillingId(
     }
     const billing = dataObj.billing;
     if (billing && typeof billing === "object") {
-      const billingObj = billing as Record<string, unknown>;
+      const billingObj = billing as JsonObject;
       if (
         typeof billingObj.id === "string" &&
         billingObj.id.trim()
@@ -251,7 +288,7 @@ export function extractBillingId(
     }
     const checkout = dataObj.checkout;
     if (checkout && typeof checkout === "object") {
-      const checkoutObj = checkout as Record<string, unknown>;
+      const checkoutObj = checkout as JsonObject;
       if (
         typeof checkoutObj.id === "string" &&
         checkoutObj.id.trim()
@@ -271,7 +308,7 @@ export function extractAbacateErrorMessage(
     return "Erro desconhecido na API AbacatePay";
   }
 
-  const root = payload as Record<string, unknown>;
+  const root = payload as JsonObject;
 
   if (typeof root.error === "string" && root.error.trim()) {
     return root.error.trim();
@@ -287,7 +324,7 @@ export function extractAbacateErrorMessage(
 
   const data = root.data;
   if (data && typeof data === "object") {
-    const dataObj = data as Record<string, unknown>;
+    const dataObj = data as JsonObject;
     if (
       typeof dataObj.error === "string" &&
       dataObj.error.trim()
@@ -352,54 +389,43 @@ export async function abacateApiRequest(
   const method = init.method || "GET";
   const startedAt = Date.now();
 
-  let bodyPreview: string | undefined;
-  if (typeof init.body === "string") {
-    try {
-      const parsed = JSON.parse(init.body);
-      bodyPreview = JSON.stringify(parsed).slice(0, 1200);
-    } catch {
-      bodyPreview = String(init.body).slice(0, 400);
-    }
-  }
+  const paymentLog = createLogger("PAYMENT");
 
-  console.log(`${logPrefix} [REQUEST]`, {
+  const res = await fetchWithTimeout(
     url,
-    method,
-    bodyPreview,
-  });
-
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      ...(init.headers as Record<string, string> | undefined),
+    {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        ...(init.headers as Record<string, string> | undefined),
+      },
     },
-  });
+    {
+      timeoutMs: 25_000,
+      retries: 1,
+      label: `abacate:${path}`,
+    }
+  );
 
   const parsed = await parseAbacateResponse(res);
 
-  console.log(`${logPrefix} [RESPONSE]`, {
+  paymentLog.info("abacate response", {
     status: parsed.status,
-    ok: parsed.ok,
-    durationMs: Date.now() - startedAt,
-    customerId: extractCustomerId(parsed.body),
-    billingUrl: extractBillingUrl(parsed.body),
-    errorMessage: parsed.ok
-      ? null
-      : extractAbacateErrorMessage(parsed.body),
-    bodyPreview: JSON.stringify(parsed.body).slice(0, 2000),
+    meta: {
+      prefix: logPrefix,
+      ok: parsed.ok,
+      durationMs: Date.now() - startedAt,
+      customerId: extractCustomerId(parsed.body),
+      billingUrl: extractBillingUrl(parsed.body),
+      errorMessage: parsed.ok
+        ? null
+        : extractAbacateErrorMessage(parsed.body),
+    },
   });
 
   return parsed;
 }
-
-const ABACATEPAY_API_KEY = process.env.ABACATEPAY_API_KEY!;
-
-const headers = {
-  Authorization: `Bearer ${ABACATEPAY_API_KEY}`,
-  "Content-Type": "application/json",
-};
 
 export async function createPixPayment(data: {
   amount: number;
@@ -409,21 +435,35 @@ export async function createPixPayment(data: {
     cellphone: string;
     email: string;
   };
-}) {
-  const response = await fetch(
-    "https://api.abacatepay.com/v1/pixQrCode/create",
+}): Promise<AbacateApiEnvelope> {
+  const apiKey = getAbacateApiKey();
+  if (!apiKey) {
+    throw new Error("ABACATEPAY_API_KEY não configurada");
+  }
+
+  const response = await fetchWithTimeout(
+    `${ABACATEPAY_API_BASE}/pixQrCode/create`,
     {
       method: "POST",
-      headers,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(data),
-    }
+    },
+    { label: "abacate:pixQrCode/create", retries: 1 }
   );
 
-  const result = await response.json();
+  const result = (await response.json()) as AbacateApiEnvelope;
 
   if (!response.ok) {
     console.error(result);
-    throw new Error(result.message || "Erro ao criar pagamento");
+    throw new Error(
+      result.message ||
+        (typeof result.error === "string"
+          ? result.error
+          : "Erro ao criar pagamento")
+    );
   }
 
   return result;

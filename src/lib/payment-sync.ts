@@ -7,36 +7,29 @@ import {
   Page,
 } from "@/lib/db";
 import {
+  asJsonObject,
+  pickFirstString,
+} from "@/lib/safe-object";
+import {
   CANONICAL_PAID_STATUS,
   isAbacatePaymentApproved,
   isPaidPageStatus,
 } from "@/lib/page-status";
 import { markPageAsPaid } from "@/lib/webhook-abacatepay";
+import type { PageDocument } from "@/types/page";
+import { fetchWithTimeout } from "@/lib/fetch-safe";
+import { createLogger } from "@/lib/logger";
 
-const LOG = "[PAYMENT-SYNC]";
-
-function pickFirstString(
-  ...values: unknown[]
-): string | null {
-  for (const v of values) {
-    if (typeof v === "string" && v.trim()) {
-      return v.trim();
-    }
-  }
-  return null;
-}
+const syncLog = createLogger("SYNC");
 
 function extractStatusFromBillingPayload(
   body: unknown
 ): string | null {
-  if (!body || typeof body !== "object") {
-    return null;
-  }
-  const root = body as Record<string, unknown>;
-  const data = root.data;
-  if (data && typeof data === "object") {
-    const d = data as Record<string, unknown>;
-    return pickFirstString(d.status);
+  const root = asJsonObject(body);
+  if (!root) return null;
+  const data = asJsonObject(root.data);
+  if (data) {
+    return pickFirstString(data.status);
   }
   return pickFirstString(root.status);
 }
@@ -51,27 +44,26 @@ async function fetchBillingById(
 
   const v2Url = `https://api.abacatepay.com/v2/checkouts/get?id=${encodeURIComponent(billingId)}`;
   try {
-    const res = await fetch(v2Url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const res = await fetchWithTimeout(
+      v2Url,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
       },
-      cache: "no-store",
-    });
-    const json = await res.json().catch(() => ({}));
-    console.log(`${LOG} v2 checkouts/get`, {
-      billingId,
-      status: res.status,
-      paymentStatus: extractStatusFromBillingPayload(
-        json
-      ),
-    });
+      { label: "abacate:v2/checkout", retries: 1, timeoutMs: 20_000 }
+    );
+    const json: unknown = await res.json().catch(
+      () => ({})
+    );
     if (res.ok) {
       return extractStatusFromBillingPayload(json);
     }
   } catch (e) {
-    console.warn(`${LOG} v2 checkouts/get falhou`, e);
+    syncLog.warn("v2 checkout failed", { error: e });
   }
 
   return null;
@@ -86,31 +78,28 @@ async function findBillingStatusByToken(
   const parsed = await abacateApiRequest(
     "/billing/list",
     { method: "GET" },
-    `${LOG} [BILLING-LIST]`
+    "[SYNC][BILLING-LIST]"
   );
 
   if (!parsed.ok || !parsed.body) {
     return { status: null, billingId: null };
   }
 
-  const root = parsed.body as Record<string, unknown>;
-  const list = Array.isArray(root.data)
+  const root = asJsonObject(parsed.body);
+  const list = Array.isArray(root?.data)
     ? root.data
     : [];
 
   for (const item of list) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-    const bill = item as Record<string, unknown>;
+    const bill = asJsonObject(item);
+    if (!bill) continue;
+
     const billExternalId =
       typeof bill.externalId === "string"
         ? bill.externalId
         : null;
     const billId =
-      typeof bill.id === "string"
-        ? bill.id
-        : null;
+      typeof bill.id === "string" ? bill.id : null;
     const billStatus =
       typeof bill.status === "string"
         ? bill.status
@@ -126,12 +115,8 @@ async function findBillingStatusByToken(
     const products = bill.products;
     if (Array.isArray(products)) {
       for (const prod of products) {
-        if (
-          prod &&
-          typeof prod === "object" &&
-          (prod as Record<string, unknown>)
-            .externalId === token
-        ) {
+        const p = asJsonObject(prod);
+        if (p?.externalId === token) {
           return {
             status: billStatus,
             billingId: billId,
@@ -154,18 +139,16 @@ export type SyncPaymentResult = {
 export async function syncPagePaymentStatus(
   token: string
 ): Promise<SyncPaymentResult> {
+  const started = Date.now();
   await connectToDatabase();
 
-  const page = await Page.findOne({ token }).lean();
+  const page = await Page.findOne({ token }).lean<PageDocument>();
 
   if (!page) {
     throw new Error("Página não encontrada");
   }
 
-  const currentStatus =
-    typeof page.status === "string"
-      ? page.status
-      : "PENDING";
+  const currentStatus = page.status ?? "PENDING";
 
   if (isPaidPageStatus(currentStatus)) {
     return {
@@ -176,41 +159,22 @@ export async function syncPagePaymentStatus(
     };
   }
 
-  const billingId =
-    typeof page.abacateBillingId === "string"
-      ? page.abacateBillingId
-      : null;
+  const billingId = page.abacateBillingId ?? null;
 
   let remoteStatus: string | null = null;
   let remoteBillingId: string | null = billingId;
 
   if (billingId) {
-    remoteStatus = await fetchBillingById(
-      billingId
-    );
+    remoteStatus = await fetchBillingById(billingId);
   }
 
   if (!remoteStatus) {
-    const found = await findBillingStatusByToken(
-      token
-    );
+    const found = await findBillingStatusByToken(token);
     remoteStatus = found.status;
-    remoteBillingId =
-      found.billingId || remoteBillingId;
+    remoteBillingId = found.billingId ?? remoteBillingId;
   }
 
-  console.log(`${LOG}`, {
-    token,
-    remoteStatus,
-    remoteBillingId,
-  });
-
-  if (
-    !isAbacatePaymentApproved(
-      remoteStatus,
-      null
-    )
-  ) {
+  if (!isAbacatePaymentApproved(remoteStatus, null)) {
     return {
       token,
       status: currentStatus,
@@ -223,6 +187,15 @@ export async function syncPagePaymentStatus(
     token,
     remoteBillingId
   );
+
+  syncLog.done("sync paid", {
+    token,
+    status: CANONICAL_PAID_STATUS,
+    meta: {
+      newlyPaid,
+      durationMs: Date.now() - started,
+    },
+  });
 
   return {
     token,

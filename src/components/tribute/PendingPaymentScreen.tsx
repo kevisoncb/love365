@@ -8,6 +8,7 @@ type PendingPaymentScreenProps = {
   pollAttempt?: number;
   onRefresh?: () => void;
   syncing?: boolean;
+  timedOut?: boolean;
 };
 
 export function PendingPaymentScreen({
@@ -15,6 +16,7 @@ export function PendingPaymentScreen({
   pollAttempt = 0,
   onRefresh,
   syncing = false,
+  timedOut = false,
 }: PendingPaymentScreenProps) {
   const [dots, setDots] = useState(0);
 
@@ -49,9 +51,10 @@ export function PendingPaymentScreen({
           Quase lá
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-          Confirmando seu pagamento com segurança
-          {".".repeat(dots)}
-          <span className="invisible">...</span>
+          {timedOut
+            ? "A confirmação está demorando mais que o normal. Você pode atualizar manualmente."
+            : `Confirmando seu pagamento com segurança${".".repeat(dots)}`}
+          {!timedOut && <span className="invisible">...</span>}
         </p>
 
         <p className="mt-2 text-xs text-[var(--text-muted)]">

@@ -1,6 +1,14 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  AnalyticsEvents,
+  funnelStepEvent,
+  trackEvent,
+} from "@/lib/analytics";
+import { toUserFacingMessage } from "@/lib/client-errors";
+import { clientFetch } from "@/lib/client-fetch";
 import { SiteNav } from "@/components/layout/SiteNav";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -26,9 +34,17 @@ function onlyDigits(s: string) {
 const TOTAL_STEPS = 4;
 
 export default function CreatePage() {
+  const searchParams = useSearchParams();
+  const startedRef = useRef(false);
+
+  const initialPlan: Plan =
+    searchParams.get("plan") === "basic"
+      ? "BASIC"
+      : "PREMIUM";
+
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
-  const [plan, setPlan] = useState<Plan>("BASIC");
+  const [plan, setPlan] = useState<Plan>(initialPlan);
   const [names, setNames] = useState("");
   const [startDate, setStartDate] = useState("");
   const [yt, setYt] = useState("");
@@ -38,9 +54,18 @@ export default function CreatePage() {
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    trackEvent(AnalyticsEvents.START_CREATE, {
+      plan: initialPlan,
+    });
+  }, [initialPlan]);
+
+  useEffect(() => {
+    setNow(new Date());
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -54,8 +79,10 @@ export default function CreatePage() {
   }, [photos]);
 
   const timeDisplay = useMemo(() => {
-    const start = startDate ? new Date(startDate + "T00:00:00") : new Date();
-    return diffParts(start, now);
+    const start = startDate
+      ? new Date(startDate + "T00:00:00")
+      : new Date();
+    return diffParts(start, now ?? start);
   }, [startDate, now]);
 
   const progress = computeCreateProgress(step, {
@@ -68,6 +95,12 @@ export default function CreatePage() {
   });
 
   const goTo = (next: number) => {
+    if (next > step) {
+      const funnelEvent = funnelStepEvent(step);
+      if (funnelEvent) {
+        trackEvent(funnelEvent, { step, plan });
+      }
+    }
     setDirection(next > step ? "forward" : "back");
     setStep(next);
     if (typeof window !== "undefined") {
@@ -114,23 +147,25 @@ export default function CreatePage() {
       formData.append("email", email);
       photos.forEach((file) => formData.append("photos", file));
 
-      const response = await fetch("/api/create-page", { method: "POST", body: formData });
+      const response = await clientFetch("/api/create-page", {
+        method: "POST",
+        body: formData,
+      });
       const data = await response.json().catch(() => ({}));
 
-      console.log("[CREATE-PAGE][CLIENT]", {
-        status: response.status,
-        ok: response.ok,
-        hasToken: Boolean(data?.token),
-        hasUrl: Boolean(data?.url || data?.paymentUrl),
-        error: data?.error,
-      });
-
       if (!response.ok) {
-        throw new Error(data?.error || `Erro ao criar página (${response.status})`);
+        throw new Error(
+          (data as { error?: string }).error ||
+            `Erro ao criar página (${response.status})`
+        );
       }
 
       const paymentUrl = data.paymentUrl || data.url;
       if (paymentUrl) {
+        trackEvent(AnalyticsEvents.PAYMENT_REDIRECT, {
+          token: data.token,
+          plan,
+        });
         setSubmitPhase("redirecting");
         window.location.href = paymentUrl;
         return;
@@ -140,12 +175,9 @@ export default function CreatePage() {
         window.location.href = data.publicUrl;
         return;
       }
-      console.error("[CREATE-PAGE][CLIENT] Resposta sem URL de pagamento:", data);
       throw new Error("Link de pagamento não retornado");
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Erro desconhecido";
-      alert("Ops! " + message);
-      console.error("Erro no envio:", err);
+      alert("Ops! " + toUserFacingMessage(err));
       setSubmitPhase("idle");
     }
   };
@@ -171,10 +203,10 @@ export default function CreatePage() {
           <div className="min-w-0">
             <header className="mb-6 text-center lg:mb-8 lg:text-left">
               <h1 className="font-display text-3xl font-medium text-white sm:text-4xl lg:text-5xl">
-                Crie sua página
+                Crie o presente que vai emocionar
               </h1>
               <p className="mt-2 text-sm text-[var(--text-muted)]">
-                Quatro passos · preview ao vivo no desktop
+                4 passos rápidos · preview ao vivo · feito no celular
               </p>
             </header>
 
@@ -271,7 +303,7 @@ export default function CreatePage() {
                       />
                     </div>
                     <p className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--accent-soft)] px-4 py-3 text-xs text-[var(--text-secondary)]">
-                      Após confirmar, você será redirecionado ao pagamento seguro. O link da página é liberado na hora.
+                      PIX seguro · página liberada na hora após confirmação · enviamos o link no e-mail
                     </p>
                   </GlassCard>
                 </StepPanel>

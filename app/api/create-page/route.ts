@@ -5,20 +5,40 @@ import { connectToDatabase, Page } from "@/lib/db";
 import { s3Client } from "@/lib/r2";
 import {
   abacateApiRequest,
+  buildCustomerPayload,
   extractAbacateErrorMessage,
   extractBillingId,
   extractBillingUrl,
   extractCustomerId,
-  formatCellphoneForAbacate,
-  formatTaxIdForAbacate,
   getAbacateApiKey,
   getSiteBaseUrl,
   logAbacateEnvDiagnostics,
 } from "@/lib/abacatepay";
+import {
+  API_DYNAMIC,
+  API_RUNTIME,
+} from "@/lib/api-config";
+
+import {
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
+import {
+  validateImageFile,
+  validatePhotoBatch,
+} from "@/lib/upload-validation";
+import { trackServerEvent } from "@/lib/analytics";
+import { AnalyticsEvents } from "@/lib/analytics-events";
+import { createLogger } from "@/lib/logger";
+import { captureServerErrorAsync } from "@/lib/error-tracking";
+import { toApiClientError } from "@/lib/client-errors";
 
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
-const LOG = "[CREATE-PAGE]";
+export const runtime = API_RUNTIME;
+export const dynamic = API_DYNAMIC;
+
+const log = createLogger("CREATE_PAGE");
 
 function safeToken(len = 10) {
   return crypto
@@ -28,13 +48,20 @@ function safeToken(len = 10) {
 }
 
 export async function POST(req: Request) {
-  const startedAt = Date.now();
-
   try {
-    console.log(`${LOG} [START] Nova requisição de criação`);
+    log.info("start", { route: "/api/create-page" });
+
+    const rate = await checkRateLimit(
+      req,
+      "create-page",
+      6,
+      15 * 60 * 1000
+    );
+    if (!rate.ok) {
+      return rateLimitResponse(rate.retryAfterSec);
+    }
 
     await connectToDatabase();
-    console.log(`${LOG} [MONGO] Conectado`);
 
     const form = await req.formData();
 
@@ -74,16 +101,25 @@ export async function POST(req: Request) {
 
     const files = form.getAll("photos") as File[];
 
+    const photoCheck = validatePhotoBatch(
+      files,
+      plan
+    );
+    if (!photoCheck.ok) {
+      throw new Error(
+        "error" in photoCheck ? photoCheck.error : "Fotos inválidas"
+      );
+    }
+
     const token = safeToken(10);
 
-    console.log(`${LOG} [INPUT]`, {
+    log.info("input", {
       token,
       plan,
-      namesLength: names.length,
-      startDate,
-      email: email ? `${email.slice(0, 3)}…` : "empty",
-      whatsappDigits: whatsapp.replace(/\D/g, "").length,
-      photosCount: files.length,
+      meta: {
+        namesLength: names.length,
+        photosCount: files.length,
+      },
     });
 
     const photoUrls: string[] = [];
@@ -93,24 +129,31 @@ export async function POST(req: Request) {
     // =========================
 
     if (!process.env.R2_BUCKET_NAME) {
-      console.error(`${LOG} [R2] R2_BUCKET_NAME ausente`);
       throw new Error(
         "Configuração R2_BUCKET_NAME ausente."
       );
     }
 
     if (!process.env.R2_PUBLIC_URL) {
-      console.error(`${LOG} [R2] R2_PUBLIC_URL ausente`);
       throw new Error(
         "Configuração R2_PUBLIC_URL ausente."
       );
     }
+
+    const uploadStarted = Date.now();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
       if (!file.name || file.size === 0) {
         continue;
+      }
+
+      const fileCheck = validateImageFile(file);
+      if (!fileCheck.ok) {
+        throw new Error(
+          "error" in fileCheck ? fileCheck.error : "Arquivo inválido"
+        );
       }
 
       const buf = Buffer.from(
@@ -121,13 +164,6 @@ export async function POST(req: Request) {
         file.name.split(".").pop() || "png";
 
       const filename = `${token}/${i + 1}.${ext}`;
-
-      console.log(`${LOG} [R2] Upload`, {
-        token,
-        filename,
-        size: file.size,
-        type: file.type,
-      });
 
       await s3Client.send(
         new PutObjectCommand({
@@ -143,9 +179,13 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log(`${LOG} [R2] Concluído`, {
+    createLogger("UPLOAD").done("r2 batch", {
       token,
-      uploadedCount: photoUrls.length,
+      status: "ok",
+      meta: {
+        uploadedCount: photoUrls.length,
+        durationMs: Date.now() - uploadStarted,
+      },
     });
 
     // =========================
@@ -164,17 +204,14 @@ export async function POST(req: Request) {
       contact: email || whatsapp,
     });
 
-    console.log(`${LOG} [MONGO] Page criada`, {
-      token,
-      plan,
-      status: "PENDING",
-    });
+    log.info("page saved", { token, plan, status: "PENDING" });
 
     // =========================
     // ABACATEPAY
     // =========================
 
-    logAbacateEnvDiagnostics(LOG);
+    logAbacateEnvDiagnostics("[CREATE_PAGE]");
+    const billingStarted = Date.now();
 
     const price =
       plan === "PREMIUM"
@@ -192,9 +229,6 @@ export async function POST(req: Request) {
     const siteBaseUrl = getSiteBaseUrl();
 
     if (!siteBaseUrl) {
-      console.error(
-        `${LOG} [ENV] NEXT_PUBLIC_URL / NEXT_PUBLIC_BASE_URL ausentes — billing exige returnUrl e completionUrl válidos`
-      );
       throw new Error(
         "URL pública do site não configurada (NEXT_PUBLIC_URL ou NEXT_PUBLIC_BASE_URL)."
       );
@@ -206,33 +240,12 @@ export async function POST(req: Request) {
     const customerEmail =
       email || `${token}@love365.com`;
 
-    const customerCellphone =
-      formatCellphoneForAbacate(whatsapp);
-
-    const customerTaxId = formatTaxIdForAbacate();
-
-    const customerBody = {
+    const customerBody = buildCustomerPayload({
       name: names || "Cliente Love365",
       email: customerEmail,
-      cellphone: customerCellphone,
-      taxId: customerTaxId,
-    };
-
-    console.log(`${LOG} [ABACATEPAY] Preparando customer`, {
-      token,
-      plan,
-      priceCents: price,
-      returnUrl,
-      completionUrl,
-      customerBody: {
-        ...customerBody,
-        email: `${customerEmail.slice(0, 3)}…`,
-      },
+      whatsapp,
+      seed: token,
     });
-
-    // =========================
-    // CRIAR CUSTOMER
-    // =========================
 
     const customerParsed = await abacateApiRequest(
       "/customer/create",
@@ -240,16 +253,11 @@ export async function POST(req: Request) {
         method: "POST",
         body: JSON.stringify(customerBody),
       },
-      `${LOG} [CUSTOMER]`
+      "[CREATE_PAGE][CUSTOMER]"
     );
 
     if (!customerParsed.ok) {
       const msg = extractAbacateErrorMessage(
-        customerParsed.body
-      );
-      console.error(
-        `${LOG} [CUSTOMER] Falha HTTP ${customerParsed.status}:`,
-        msg,
         customerParsed.body
       );
       throw new Error(
@@ -262,19 +270,10 @@ export async function POST(req: Request) {
     );
 
     if (!customerId) {
-      console.error(
-        `${LOG} [CUSTOMER] customerId ausente na resposta v1:`,
-        customerParsed.body
-      );
       throw new Error(
         "Customer not found (resposta AbacatePay sem data.id)"
       );
     }
-
-    console.log(`${LOG} [CUSTOMER] OK`, {
-      token,
-      customerId,
-    });
 
     // =========================
     // CRIAR COBRANÇA
@@ -302,22 +301,13 @@ export async function POST(req: Request) {
       },
     };
 
-    console.log(`${LOG} [BILLING] Enviando cobrança`, {
-      token,
-      customerId,
-      billingBody: {
-        ...billingBody,
-        metadata: billingBody.metadata,
-      },
-    });
-
     const billingParsed = await abacateApiRequest(
       "/billing/create",
       {
         method: "POST",
         body: JSON.stringify(billingBody),
       },
-      `${LOG} [BILLING]`
+      "[CREATE_PAGE][BILLING]"
     );
 
     const paymentUrl = extractBillingUrl(
@@ -326,11 +316,6 @@ export async function POST(req: Request) {
 
     if (!billingParsed.ok || !paymentUrl) {
       const msg = extractAbacateErrorMessage(
-        billingParsed.body
-      );
-      console.error(
-        `${LOG} [BILLING] Falha HTTP ${billingParsed.status}:`,
-        msg,
         billingParsed.body
       );
       throw new Error(
@@ -347,28 +332,24 @@ export async function POST(req: Request) {
         { token },
         { $set: { abacateBillingId } }
       );
-      console.log(`${LOG} [MONGO] abacateBillingId salvo`, {
-        token,
-        abacateBillingId,
-      });
+      log.info("billing id saved", { token, meta: { abacateBillingId } });
     } else {
-      console.warn(
-        `${LOG} [BILLING] Resposta sem bill id — sync-payment usará billing/list`,
-        { token }
-      );
+      log.warn("billing id missing", { token });
     }
 
-    console.log(`${LOG} [SUCCESS]`, {
+    createLogger("PAYMENT").done("billing created", {
       token,
-      customerId,
-      abacateBillingId,
-      paymentUrl,
-      durationMs: Date.now() - startedAt,
+      plan,
+      status: billingParsed.status,
+      meta: { durationMs: Date.now() - billingStarted },
     });
 
-    // =========================
-    // SUCESSO
-    // =========================
+    trackServerEvent(
+      AnalyticsEvents.PAYMENT_REDIRECT,
+      { token, plan }
+    );
+
+    log.done("success", { token, plan, status: 200 });
 
     return NextResponse.json({
       token,
@@ -376,21 +357,14 @@ export async function POST(req: Request) {
       paymentUrl,
     });
   } catch (err: unknown) {
-    const message =
-      err instanceof Error
-        ? err.message
-        : "Erro interno";
-
-    console.error(`${LOG} [ERROR]`, {
-      message,
-      err,
-      durationMs: Date.now() - startedAt,
+    captureServerErrorAsync(err, {
+      scope: "CREATE_PAGE",
+      route: "/api/create-page",
     });
+    log.error("failed", { error: err, route: "/api/create-page" });
 
     return NextResponse.json(
-      {
-        error: message,
-      },
+      { error: toApiClientError(err) },
       { status: 500 }
     );
   }

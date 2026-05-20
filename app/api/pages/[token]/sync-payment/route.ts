@@ -1,33 +1,49 @@
 import { NextResponse } from "next/server";
 
+import {
+  API_DYNAMIC,
+  API_RUNTIME,
+  NO_STORE_HEADERS,
+} from "@/lib/api-config";
+import {
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 import { connectToDatabase, Page } from "@/lib/db";
 import { syncPagePaymentStatus } from "@/lib/payment-sync";
 import { isPaidPageStatus } from "@/lib/page-status";
+import type { PageDocument } from "@/types/page";
+import { createLogger } from "@/lib/logger";
+import { captureServerErrorAsync } from "@/lib/error-tracking";
+import { toApiClientError } from "@/lib/client-errors";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = API_RUNTIME;
+export const dynamic = API_DYNAMIC;
 
-const LOG = "[SYNC-PAYMENT]";
+const log = createLogger("SYNC");
 const MIN_SYNC_INTERVAL_MS = 8_000;
 
-const NO_CACHE_HEADERS = {
-  "Cache-Control":
-    "no-store, no-cache, must-revalidate, proxy-revalidate",
-  Pragma: "no-cache",
-  Expires: "0",
-};
-
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
   try {
+    const rate = await checkRateLimit(
+      request,
+      "sync-payment",
+      30,
+      10 * 60 * 1000
+    );
+    if (!rate.ok) {
+      return rateLimitResponse(rate.retryAfterSec);
+    }
+
     const { token } = await params;
 
     if (!token?.trim()) {
       return NextResponse.json(
         { error: "Token inválido." },
-        { status: 400, headers: NO_CACHE_HEADERS }
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -35,16 +51,16 @@ export async function POST(
 
     const page = await Page.findOne({
       token: token.trim(),
-    }).lean();
+    }).lean<PageDocument>();
 
     if (!page) {
       return NextResponse.json(
         { error: "Página não encontrada." },
-        { status: 404, headers: NO_CACHE_HEADERS }
+        { status: 404, headers: NO_STORE_HEADERS }
       );
     }
 
-    if (isPaidPageStatus(page.status as string)) {
+    if (isPaidPageStatus(page.status)) {
       return NextResponse.json(
         {
           token,
@@ -52,7 +68,7 @@ export async function POST(
           updated: false,
           paid: true,
         },
-        { headers: NO_CACHE_HEADERS }
+        { headers: NO_STORE_HEADERS }
       );
     }
 
@@ -68,11 +84,11 @@ export async function POST(
       return NextResponse.json(
         {
           token,
-          status: page.status,
+          status: page.status ?? "PENDING",
           updated: false,
           throttled: true,
         },
-        { headers: NO_CACHE_HEADERS }
+        { headers: NO_STORE_HEADERS }
       );
     }
 
@@ -85,24 +101,24 @@ export async function POST(
       token.trim()
     );
 
-    console.log(`${LOG}`, result);
+    log.done("sync route", { token: token.trim(), status: result.status });
 
     return NextResponse.json(
       {
         ...result,
         paid: isPaidPageStatus(result.status),
       },
-      { headers: NO_CACHE_HEADERS }
+      { headers: NO_STORE_HEADERS }
     );
   } catch (e: unknown) {
-    const message =
-      e instanceof Error
-        ? e.message
-        : "Erro interno";
-    console.error(`${LOG} [ERROR]`, message);
+    captureServerErrorAsync(e, {
+      scope: "SYNC",
+      route: "/api/pages/[token]/sync-payment",
+    });
+    log.error("sync route failed", { error: e });
     return NextResponse.json(
-      { error: message },
-      { status: 500, headers: NO_CACHE_HEADERS }
+      { error: toApiClientError(e) },
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }

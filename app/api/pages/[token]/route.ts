@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 
+import {
+  API_DYNAMIC,
+  API_RUNTIME,
+  NO_STORE_HEADERS,
+} from "@/lib/api-config";
 import { connectToDatabase, Page } from "@/lib/db";
 import { isPaidPageStatus } from "@/lib/page-status";
+import type { PageDocument } from "@/types/page";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-const NO_CACHE_HEADERS = {
-  "Cache-Control":
-    "no-store, no-cache, must-revalidate, proxy-revalidate",
-  Pragma: "no-cache",
-  Expires: "0",
-};
+export const runtime = API_RUNTIME;
+export const dynamic = API_DYNAMIC;
 
 export async function GET(
   request: Request,
@@ -23,26 +22,22 @@ export async function GET(
     if (!token) {
       return NextResponse.json(
         { error: "Token inválido." },
-        { status: 400, headers: NO_CACHE_HEADERS }
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
     await connectToDatabase();
 
-    const page = await Page.findOne({
-      token,
-    }).lean();
+    const page = await Page.findOne({ token }).lean<PageDocument>();
 
     if (!page) {
       return NextResponse.json(
         { error: "Página não encontrada." },
-        { status: 404, headers: NO_CACHE_HEADERS }
+        { status: 404, headers: NO_STORE_HEADERS }
       );
     }
 
-    const paid = isPaidPageStatus(
-      page.status as string | undefined
-    );
+    const paid = isPaidPageStatus(page.status);
 
     const url = new URL(request.url);
     const forceSync =
@@ -56,30 +51,23 @@ export async function GET(
         names: page.names,
         date: page.date,
         startDate: page.date,
-        photoUrls: page.photoUrls || [],
-        photos: page.photoUrls || [],
-        youtubeUrl: page.youtubeUrl,
-        yt: page.youtubeUrl,
-        status: page.status,
+        photoUrls: page.photoUrls ?? [],
+        photos: page.photoUrls ?? [],
+        youtubeUrl: page.youtubeUrl ?? null,
+        yt: page.youtubeUrl ?? null,
+        status: page.status ?? "PENDING",
         paid,
-        abacateBillingId: page.abacateBillingId || null,
-        paidAt: page.paidAt || null,
-        syncRecommended:
-          !paid && forceSync === false,
+        abacateBillingId: page.abacateBillingId ?? null,
+        paidAt: page.paidAt ?? null,
+        syncRecommended: !paid && !forceSync,
       },
-      {
-        status: 200,
-        headers: NO_CACHE_HEADERS,
-      }
+      { status: 200, headers: NO_STORE_HEADERS }
     );
   } catch (e: unknown) {
-    console.error(
-      "[GET-PAGE] Erro na busca da página:",
-      e
-    );
+    console.error("[GET-PAGE] Erro:", e);
     return NextResponse.json(
       { error: "Erro interno." },
-      { status: 500, headers: NO_CACHE_HEADERS }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }

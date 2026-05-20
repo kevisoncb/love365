@@ -292,6 +292,31 @@ body {
   cursor: not-allowed;
 }
 
+.love-skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.love-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.06),
+    transparent
+  );
+  animation: love-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes love-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .love-step-forward,
   .love-step-back,
