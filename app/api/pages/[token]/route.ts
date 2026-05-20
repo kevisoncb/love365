@@ -1,50 +1,85 @@
 import { NextResponse } from "next/server";
+
 import { connectToDatabase, Page } from "@/lib/db";
+import { isPaidPageStatus } from "@/lib/page-status";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// No Next.js 15, params precisa ser tratado como Promise
-export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+const NO_CACHE_HEADERS = {
+  "Cache-Control":
+    "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ token: string }> }
+) {
   try {
-    // 1. Aguarda o recebimento do token (correção para Next.js 15)
     const { token } = await params;
 
     if (!token) {
-      return NextResponse.json({ error: "Token inválido." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Token inválido." },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
     await connectToDatabase();
-    
-    // 2. Busca no banco
-    const page = await Page.findOne({ token }).lean();
+
+    const page = await Page.findOne({
+      token,
+    }).lean();
 
     if (!page) {
-      return NextResponse.json({ error: "Página não encontrada." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Página não encontrada." },
+        { status: 404, headers: NO_CACHE_HEADERS }
+      );
     }
 
-    // 3. Retorna os dados com mapeamento de nomes (mantendo compatibilidade)
-    return NextResponse.json({
-      token: page.token,
-      plan: page.plan,
-      names: page.names,
-      date: page.date,          
-      startDate: page.date,     
-      photoUrls: page.photoUrls || [], 
-      photos: page.photoUrls || [],    
-      youtubeUrl: page.youtubeUrl,     
-      yt: page.youtubeUrl,             
-      status: page.status,
-    }, { 
-      status: 200,
-      headers: { 
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0",
-      } 
-    });
+    const paid = isPaidPageStatus(
+      page.status as string | undefined
+    );
 
-  } catch (e: any) {
-    console.error("Erro na busca da página:", e);
-    return NextResponse.json({ error: "Erro interno." }, { status: 500 });
+    const url = new URL(request.url);
+    const forceSync =
+      url.searchParams.get("sync") === "1" ||
+      url.searchParams.get("sync") === "true";
+
+    return NextResponse.json(
+      {
+        token: page.token,
+        plan: page.plan,
+        names: page.names,
+        date: page.date,
+        startDate: page.date,
+        photoUrls: page.photoUrls || [],
+        photos: page.photoUrls || [],
+        youtubeUrl: page.youtubeUrl,
+        yt: page.youtubeUrl,
+        status: page.status,
+        paid,
+        abacateBillingId: page.abacateBillingId || null,
+        paidAt: page.paidAt || null,
+        syncRecommended:
+          !paid && forceSync === false,
+      },
+      {
+        status: 200,
+        headers: NO_CACHE_HEADERS,
+      }
+    );
+  } catch (e: unknown) {
+    console.error(
+      "[GET-PAGE] Erro na busca da página:",
+      e
+    );
+    return NextResponse.json(
+      { error: "Erro interno." },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }

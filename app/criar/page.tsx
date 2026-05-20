@@ -115,10 +115,18 @@ export default function CreatePage() {
       photos.forEach((file) => formData.append("photos", file));
 
       const response = await fetch("/api/create-page", { method: "POST", body: formData });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+
+      console.log("[CREATE-PAGE][CLIENT]", {
+        status: response.status,
+        ok: response.ok,
+        hasToken: Boolean(data?.token),
+        hasUrl: Boolean(data?.url || data?.paymentUrl),
+        error: data?.error,
+      });
 
       if (!response.ok) {
-        throw new Error(data.error || "Erro ao criar página");
+        throw new Error(data?.error || `Erro ao criar página (${response.status})`);
       }
 
       const paymentUrl = data.paymentUrl || data.url;
@@ -132,6 +140,7 @@ export default function CreatePage() {
         window.location.href = data.publicUrl;
         return;
       }
+      console.error("[CREATE-PAGE][CLIENT] Resposta sem URL de pagamento:", data);
       throw new Error("Link de pagamento não retornado");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erro desconhecido";

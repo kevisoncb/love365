@@ -56,8 +56,31 @@ const PageSchema = new mongoose.Schema({
   photoUrls: [{ type: String }],
   contact: { type: String },
   status: { type: String, default: "PENDING" },
+  abacateBillingId: { type: String },
+  paidAt: { type: Date },
+  emailSentAt: { type: Date },
+  lastPaymentSyncAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
 });
 
+const ProcessedWebhookEventSchema = new mongoose.Schema({
+  eventId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true,
+  },
+  token: { type: String },
+  processedAt: { type: Date, default: Date.now },
+});
+
 export const Page =
-  mongoose.models.Page || mongoose.model("Page", PageSchema);
+  mongoose.models.Page ||
+  mongoose.model("Page", PageSchema);
+
+export const ProcessedWebhookEvent =
+  mongoose.models.ProcessedWebhookEvent ||
+  mongoose.model(
+    "ProcessedWebhookEvent",
+    ProcessedWebhookEventSchema
+  );
