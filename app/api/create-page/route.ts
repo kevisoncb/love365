@@ -150,6 +150,10 @@ export async function POST(req: Request) {
             email ||
             `${token}@love365.com`,
 
+          cellphone:
+            whatsapp ||
+            "11999999999",
+
           taxId: "00000000000",
         }),
       }
