@@ -2,13 +2,19 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const { token, plan, email } = await req.json();
+    const formData = await req.formData();
+
+    const token = String(formData.get("token") || "");
+    const plan = String(formData.get("plan") || "");
+    const email = String(formData.get("email") || "");
 
     const apiKey = process.env.ABACATEPAY_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "API Key não configurada" },
+        {
+          error: "API Key não configurada",
+        },
         { status: 500 }
       );
     }
@@ -37,9 +43,7 @@ export async function POST(req: Request) {
 
     const customerData = await customerRes.json();
 
-    return NextResponse.json({
-  customerData,
-});
+    console.log("CUSTOMER RESPONSE:", customerData);
 
     if (!customerRes.ok) {
       return NextResponse.json(
@@ -61,6 +65,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error: "Customer not found",
+          customerData,
         },
         { status: 400 }
       );
@@ -71,7 +76,9 @@ export async function POST(req: Request) {
     // =========================
 
     const amountInReais =
-      plan === "PREMIUM" ? 49.9 : 29.9;
+      plan === "PREMIUM"
+        ? 49.9
+        : 29.9;
 
     const priceInCents = Math.round(
       amountInReais * 100
@@ -79,24 +86,28 @@ export async function POST(req: Request) {
 
     const billingBody = {
       frequency: "ONE_TIME",
+
       methods: ["PIX"],
 
       products: [
         {
-          externalId: token,
+          externalId:
+            token || crypto.randomUUID(),
+
           name:
             plan === "PREMIUM"
               ? "Love365 - Vitalício"
               : "Love365 - Anual",
 
           quantity: 1,
+
           price: priceInCents,
         },
       ],
 
-      returnUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/p/${token}`,
+      returnUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/`,
 
-      completionUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/p/${token}`,
+      completionUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/`,
 
       customerId,
     };
