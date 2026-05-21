@@ -272,6 +272,8 @@ export function TributesOperations() {
               <th className="px-4 py-3 text-left">Token</th>
               <th className="px-4 py-3 text-left">Plano</th>
               <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left">E-mail</th>
+              <th className="px-4 py-3 text-left">WhatsApp</th>
               <th className="px-4 py-3 text-left">Fotos</th>
               <th className="px-4 py-3 text-left">Valor</th>
               <th className="px-4 py-3 text-left">Criada</th>
@@ -282,13 +284,13 @@ export function TributesOperations() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} className={adminTheme.empty}>
+                <td colSpan={11} className={adminTheme.empty}>
                   Carregando…
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={9} className={adminTheme.empty}>
+                <td colSpan={11} className={adminTheme.empty}>
                   Nenhuma homenagem encontrada
                 </td>
               </tr>
@@ -305,6 +307,28 @@ export function TributesOperations() {
                   <td className={adminTheme.tableCell}>
                     <AdminBadge tone={statusTone(row.status)}>
                       {row.status}
+                    </AdminBadge>
+                  </td>
+                  <td className={adminTheme.tableCell}>
+                    <AdminBadge
+                      tone={deliveryStatusTone(
+                        row.emailDeliveryStatus
+                      )}
+                    >
+                      {formatDeliveryStatus(
+                        row.emailDeliveryStatus
+                      )}
+                    </AdminBadge>
+                  </td>
+                  <td className={adminTheme.tableCell}>
+                    <AdminBadge
+                      tone={deliveryStatusTone(
+                        row.whatsappDeliveryStatus
+                      )}
+                    >
+                      {formatDeliveryStatus(
+                        row.whatsappDeliveryStatus
+                      )}
                     </AdminBadge>
                   </td>
                   <td className={adminTheme.tableCell}>{row.photoCount}</td>
@@ -409,12 +433,75 @@ export function TributesOperations() {
                 <dd className="mt-0.5 text-zinc-200">{selected.photoCount}</dd>
               </div>
               <div className="col-span-2">
-                <dt className="text-xs text-zinc-500">Contato</dt>
+                <dt className="text-xs text-zinc-500">Contato comprador</dt>
                 <dd className="mt-0.5 text-zinc-200">
-                  {selected.email || selected.whatsapp || "—"}
+                  {selected.email && (
+                    <span className="block">{selected.email}</span>
+                  )}
+                  {selected.whatsapp && (
+                    <span className="block text-zinc-400">
+                      WA: {selected.whatsapp}
+                    </span>
+                  )}
+                  {!selected.email && !selected.whatsapp && "—"}
                 </dd>
               </div>
             </dl>
+
+            <div className="mt-6 rounded-xl border border-zinc-700/50 bg-zinc-800/30 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Entrega premium
+              </p>
+              <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <dt className="text-xs text-zinc-500">E-mail</dt>
+                  <dd className="mt-1">
+                    <AdminBadge
+                      tone={deliveryStatusTone(
+                        selected.emailDeliveryStatus
+                      )}
+                    >
+                      {formatDeliveryStatus(
+                        selected.emailDeliveryStatus
+                      )}
+                    </AdminBadge>
+                  </dd>
+                  {selected.emailDeliveredAt && (
+                    <p className="mt-1 text-[10px] text-zinc-500">
+                      {new Date(
+                        selected.emailDeliveredAt
+                      ).toLocaleString("pt-BR")}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <dt className="text-xs text-zinc-500">WhatsApp</dt>
+                  <dd className="mt-1">
+                    <AdminBadge
+                      tone={deliveryStatusTone(
+                        selected.whatsappDeliveryStatus
+                      )}
+                    >
+                      {formatDeliveryStatus(
+                        selected.whatsappDeliveryStatus
+                      )}
+                    </AdminBadge>
+                  </dd>
+                  {selected.whatsappDeliveredAt && (
+                    <p className="mt-1 text-[10px] text-zinc-500">
+                      {new Date(
+                        selected.whatsappDeliveredAt
+                      ).toLocaleString("pt-BR")}
+                    </p>
+                  )}
+                </div>
+              </dl>
+              {selected.deliveryError && (
+                <p className="mt-3 text-xs text-rose-400">
+                  {selected.deliveryError}
+                </p>
+              )}
+            </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
               <AdminButton
@@ -468,11 +555,27 @@ export function TributesOperations() {
               </AdminButton>
               <AdminButton
                 onClick={() =>
-                  runAction(selected.token, "resend_link")
+                  runAction(selected.token, "resend_delivery")
                 }
                 disabled={!!actionLoading}
               >
-                Reenviar link
+                Reenviar tudo
+              </AdminButton>
+              <AdminButton
+                onClick={() =>
+                  runAction(selected.token, "resend_email")
+                }
+                disabled={!!actionLoading}
+              >
+                Reenviar e-mail
+              </AdminButton>
+              <AdminButton
+                onClick={() =>
+                  runAction(selected.token, "resend_whatsapp")
+                }
+                disabled={!!actionLoading}
+              >
+                Reenviar WhatsApp
               </AdminButton>
               <AdminButton
                 variant="danger"
