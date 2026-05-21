@@ -1,6 +1,6 @@
 /**
  * Logs estruturados para Vercel / operação SaaS.
- * Prefixos: [CREATE_PAGE] [UPLOAD] [PAYMENT] [WEBHOOK] [SYNC] [TRIBUTE] [ERROR] [ADMIN] [ANALYTICS]
+ * Prefixos: [CREATE_PAGE] [UPLOAD] [PAYMENT] [WEBHOOK] [SYNC] [TRIBUTE] [ERROR] [ADMIN] [ANALYTICS] [DELIVERY]
  */
 
 export type LogScope =
@@ -10,9 +10,10 @@ export type LogScope =
   | "WEBHOOK"
   | "SYNC"
   | "TRIBUTE"
+  | "ERROR"
   | "ADMIN"
   | "ANALYTICS"
-  | "ERROR";
+  | "DELIVERY";
 
 export type LogLevel = "info" | "warn" | "error";
 
