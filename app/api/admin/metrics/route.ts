@@ -74,7 +74,7 @@ export async function GET(req: Request) {
       .limit(20)
       .lean();
 
-    log.done("metrics", { durationMs: Date.now() - started });
+    log.done("metrics");
 
     return NextResponse.json(
       {
