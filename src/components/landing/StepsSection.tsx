@@ -1,4 +1,5 @@
 import { GlassCard } from "@/components/ui/GlassCard";
+import { PLAN_PRICING } from "@/lib/pricing";
 
 const passos = [
   {
@@ -9,7 +10,7 @@ const passos = [
   {
     numero: "02",
     titulo: "Escolha o plano",
-    desc: "Essencial ou Premium — pagamento rápido via PIX.",
+    desc: `Premium recomendado (${PLAN_PRICING.PREMIUM.priceDisplay}) — PIX confirma em segundos.`,
   },
   {
     numero: "03",

@@ -1,36 +1,41 @@
 "use client";
 
 import { AnalyticsEvents, trackEvent } from "@/lib/analytics";
-
-type Plan = "BASIC" | "PREMIUM";
+import {
+  PLAN_PRICING,
+  PREMIUM_UPSELL_DELTA_DISPLAY,
+  type PlanId,
+} from "@/lib/pricing";
 
 const PLANS = [
   {
-    id: "BASIC" as const,
-    label: "Essencial",
-    price: "R$ 29,90",
-    tag: null,
-    perks: "3 fotos · contador eterno · link na hora",
+    id: PLAN_PRICING.PREMIUM.id,
+    label: PLAN_PRICING.PREMIUM.label,
+    price: PLAN_PRICING.PREMIUM.priceDisplay,
+    tag: "Presente eterno",
+    perks: PLAN_PRICING.PREMIUM.shortPerk,
+    sub: `Só +${PREMIUM_UPSELL_DELTA_DISPLAY} vs. Essencial`,
   },
   {
-    id: "PREMIUM" as const,
-    label: "Premium",
-    price: "R$ 49,90",
-    tag: "Mais escolhido",
-    perks: "5 fotos · música · corações · impacto máximo",
+    id: PLAN_PRICING.BASIC.id,
+    label: PLAN_PRICING.BASIC.label,
+    price: PLAN_PRICING.BASIC.priceDisplay,
+    tag: null,
+    perks: PLAN_PRICING.BASIC.shortPerk,
+    sub: "Entrada rápida · upgrade fácil",
   },
 ];
 
 type PlanSelectorProps = {
-  value: Plan;
-  onChange: (plan: Plan) => void;
+  value: PlanId;
+  onChange: (plan: PlanId) => void;
 };
 
 export function PlanSelector({
   value,
   onChange,
 }: PlanSelectorProps) {
-  const handleSelect = (plan: Plan) => {
+  const handleSelect = (plan: PlanId) => {
     onChange(plan);
     trackEvent(AnalyticsEvents.PLAN_SELECTED, { plan });
     if (plan === "BASIC") {
@@ -42,9 +47,15 @@ export function PlanSelector({
 
   return (
     <div className="space-y-4">
+      <p className="text-center text-xs text-[var(--text-muted)] sm:text-left">
+        Premium é o padrão — menos que um date, link vitalício e entrega na hora
+        após o PIX.
+      </p>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {PLANS.map((p) => {
           const selected = value === p.id;
+          const isPremium = p.id === "PREMIUM";
           return (
             <button
               key={p.id}
@@ -55,9 +66,10 @@ export function PlanSelector({
                 selected
                   ? "border-[var(--accent)] bg-[var(--accent-soft)] premium-glow"
                   : "border-[var(--border)] bg-white/[0.02]",
-                p.id === "PREMIUM" && !selected
-                  ? "ring-1 ring-[var(--accent)]/20"
+                isPremium && !selected
+                  ? "ring-1 ring-[var(--accent)]/30"
                   : "",
+                isPremium ? "sm:order-first" : "sm:order-last",
               ].join(" ")}
             >
               {p.tag && (
@@ -71,6 +83,9 @@ export function PlanSelector({
               <span className="mt-1 block font-display text-2xl text-white">
                 {p.price}
               </span>
+              <span className="mt-1 block text-[10px] font-medium text-[var(--accent)]">
+                {p.sub}
+              </span>
               <span className="mt-2 block text-xs text-[var(--text-muted)]">
                 {p.perks}
               </span>
@@ -83,12 +98,13 @@ export function PlanSelector({
         <button
           type="button"
           onClick={() => handleSelect("PREMIUM")}
-          className="w-full rounded-xl border border-dashed border-[var(--border-accent)] bg-[var(--accent-soft)] px-4 py-3 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--accent-soft)]"
+          className="w-full rounded-xl border border-dashed border-[var(--border-accent)] bg-[var(--accent-soft)] px-4 py-3.5 text-left text-xs text-[var(--text-secondary)] transition hover:border-[var(--accent)]/50"
         >
           <span className="font-semibold text-[var(--accent)]">
-            Quer música e corações animados?
+            Por só +{PREMIUM_UPSELL_DELTA_DISPLAY}:
           </span>{" "}
-          Toque aqui e upgrade para Premium — a experiência que mais emociona.
+          música, corações e o “uau” completo no WhatsApp — a maioria escolhe
+          Premium ({PLAN_PRICING.PREMIUM.priceDisplay}).
         </button>
       )}
     </div>

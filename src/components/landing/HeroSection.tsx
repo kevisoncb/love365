@@ -1,6 +1,8 @@
 import Link from "next/link";
+
 import { PhoneMockup } from "@/components/landing/PhoneMockup";
 import { PremiumButton } from "@/components/ui/PremiumButton";
+import { PLAN_PRICING } from "@/lib/pricing";
 
 export function HeroSection() {
   return (
@@ -10,7 +12,7 @@ export function HeroSection() {
     >
       <header className="flex flex-col items-center text-center lg:items-start lg:text-left">
         <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-[var(--border-accent)] bg-[var(--accent-soft)] px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
           Presente que emociona de verdade
         </span>
 
@@ -22,15 +24,16 @@ export function HeroSection() {
         </h1>
 
         <p className="mt-6 max-w-lg text-base leading-relaxed text-[var(--text-secondary)] sm:text-lg">
-          Fotos, contador ao vivo e a música de vocês — um presente digital
-          cinematográfico, pronto em poucos minutos no celular.
+          Fotos, contador ao vivo e a música de vocês — presente digital
+          cinematográfico, pronto em minutos no celular. Link vitalício, sem
+          mensalidade.
         </p>
 
         <ul className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
           {[
             "+2.400 casais",
-            "PIX seguro",
-            "Link liberado na hora",
+            "PIX · libera na hora",
+            "Menos que um date",
           ].map((badge) => (
             <li
               key={badge}
@@ -42,7 +45,7 @@ export function HeroSection() {
         </ul>
 
         <p className="mt-6 text-xs text-[var(--text-muted)]">
-          Leva em média 4 minutos · sem app · funciona no WhatsApp
+          Leva ~4 min no celular · sem app · perfeito para WhatsApp e Stories
         </p>
 
         <div className="mt-8 flex w-full flex-col gap-3 sm:flex-row sm:items-center">
@@ -50,13 +53,13 @@ export function HeroSection() {
             href="/criar?plan=premium"
             className="w-full sm:w-auto"
           >
-            Quero criar agora — R$ 49,90
+            Criar agora — {PLAN_PRICING.PREMIUM.priceDisplay}
           </PremiumButton>
           <Link
-            href="/criar"
+            href="/criar?plan=basic"
             className="w-full rounded-full border border-[var(--border)] py-3.5 text-center text-sm font-semibold text-white transition hover:border-[var(--border-accent)] sm:w-auto"
           >
-            Ver opção Essencial
+            Essencial {PLAN_PRICING.BASIC.priceDisplay}
           </Link>
         </div>
 
@@ -64,7 +67,7 @@ export function HeroSection() {
           href="#planos"
           className="mt-4 text-center text-sm font-medium text-[var(--text-muted)] underline-offset-4 hover:text-white hover:underline lg:text-left"
         >
-          Comparar planos
+          Comparar planos — Premium recomendado
         </Link>
       </header>
 

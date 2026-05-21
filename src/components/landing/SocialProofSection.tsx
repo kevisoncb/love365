@@ -13,7 +13,7 @@ const testimonials = [
   },
   {
     quote:
-      "A música da nossa história tocando na página valeu cada centavo do Premium.",
+      "O Premium com a música da nossa história foi o presente mais emocionante — e saiu mais barato que sair pra jantar.",
     author: "Lucas & Ju, MG",
   },
 ];

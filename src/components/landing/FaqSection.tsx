@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+
 import { GlassCard } from "@/components/ui/GlassCard";
+import { PLAN_PRICING } from "@/lib/pricing";
 
 const faqs = [
   {
@@ -9,8 +11,8 @@ const faqs = [
     a: "Uma página exclusiva para o seu relacionamento: contador em tempo real, fotos e, no Premium, música personalizada.",
   },
   {
-    q: "Quais métodos de pagamento estão disponíveis?",
-    a: "PIX e cartão de crédito, processados com segurança. A liberação é imediata após a confirmação.",
+    q: "Quanto custa e como pago?",
+    a: `Essencial ${PLAN_PRICING.BASIC.priceDisplay} ou Premium ${PLAN_PRICING.PREMIUM.priceDisplay} — pagamento via PIX, seguro e rápido. A página libera automaticamente assim que o pagamento confirma, em poucos segundos.`,
   },
   {
     q: "Quanto tempo a página fica no ar?",

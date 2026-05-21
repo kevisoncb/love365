@@ -23,6 +23,7 @@ import { CreateLoadingOverlay } from "@/components/create/CreateLoadingOverlay";
 import { compressImageToJpeg } from "@/lib/compress-image";
 import { diffParts } from "@/lib/date-utils";
 import { computeCreateProgress, canAdvanceStep } from "@/lib/create-progress";
+import { PLAN_PRICING } from "@/lib/pricing";
 
 type Plan = "BASIC" | "PREMIUM";
 type SubmitPhase = "idle" | "creating" | "redirecting";
@@ -206,7 +207,8 @@ export default function CreatePage() {
                 Crie o presente que vai emocionar
               </h1>
               <p className="mt-2 text-sm text-[var(--text-muted)]">
-                4 passos rápidos · preview ao vivo · feito no celular
+                4 passos · preview ao vivo · Premium {PLAN_PRICING.PREMIUM.priceDisplay}{" "}
+                · PIX libera na hora
               </p>
             </header>
 
@@ -302,8 +304,16 @@ export default function CreatePage() {
                         required
                       />
                     </div>
-                    <p className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--accent-soft)] px-4 py-3 text-xs text-[var(--text-secondary)]">
-                      PIX seguro · página liberada na hora após confirmação · enviamos o link no e-mail
+                    <p className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--accent-soft)] px-4 py-3 text-xs leading-relaxed text-[var(--text-secondary)]">
+                      <span className="font-semibold text-white">
+                        {plan === "PREMIUM"
+                          ? PLAN_PRICING.PREMIUM.priceDisplay
+                          : PLAN_PRICING.BASIC.priceDisplay}{" "}
+                        via PIX
+                      </span>{" "}
+                      — confirma em segundos, link vitalício liberado na hora.
+                      Enviamos também no e-mail. Sem mensalidade, sem risco
+                      escondido.
                     </p>
                   </GlassCard>
                 </StepPanel>
@@ -335,7 +345,9 @@ export default function CreatePage() {
                     loading={submitPhase !== "idle"}
                     disabled={!canNext || submitPhase !== "idle"}
                   >
-                    Criar nosso site eterno
+                    {plan === "PREMIUM"
+                      ? `Finalizar Premium — ${PLAN_PRICING.PREMIUM.priceDisplay}`
+                      : `Finalizar Essencial — ${PLAN_PRICING.BASIC.priceDisplay}`}
                   </PremiumButton>
                 )}
               </nav>

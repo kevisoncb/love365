@@ -10,6 +10,7 @@ import {
   getSiteBaseUrl,
 } from "@/lib/abacatepay";
 import { NO_STORE_HEADERS } from "@/lib/api-config";
+import { getPlanPriceCents } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,8 +62,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const priceInCents =
-      plan === "PREMIUM" ? 4990 : 2990;
+    const priceInCents = getPlanPriceCents(
+      plan === "PREMIUM" ? "PREMIUM" : "BASIC"
+    );
 
     const billingBody = {
       frequency: "ONE_TIME",

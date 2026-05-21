@@ -28,6 +28,7 @@ import { AnalyticsEvents } from "@/lib/analytics-events";
 import { createLogger } from "@/lib/logger";
 import { captureServerErrorAsync } from "@/lib/error-tracking";
 import { toApiClientError } from "@/lib/client-errors";
+import { getPlanPriceCents } from "@/lib/pricing";
 
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
@@ -209,10 +210,9 @@ export async function POST(req: Request) {
     logAbacateEnvDiagnostics("[CREATE_PAGE]");
     const billingStarted = Date.now();
 
-    const price =
-      plan === "PREMIUM"
-        ? 4990
-        : 2990;
+    const price = getPlanPriceCents(
+      plan === "PREMIUM" ? "PREMIUM" : "BASIC"
+    );
 
     const apiKey = getAbacateApiKey();
 

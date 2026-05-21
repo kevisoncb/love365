@@ -11,6 +11,9 @@ import { TimerTile } from "@/components/tribute/TimerTile";
 import { HeartsOverlay } from "@/components/tribute/HeartsOverlay";
 
 import { PendingPaymentScreen } from "@/components/tribute/PendingPaymentScreen";
+import { TributePhoto } from "@/components/tribute/TributePhoto";
+import { TributeShareActions } from "@/components/tribute/TributeShareActions";
+import { usePhotoLayouts } from "@/components/tribute/usePhotoLayouts";
 
 import { TributePageSkeleton } from "@/components/ui/Skeleton";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
@@ -130,6 +133,8 @@ export default function PublicCouplePage() {
   const ytIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const [musicStarted, setMusicStarted] = useState(false);
+
+  const [shareUrl, setShareUrl] = useState("");
 
   const pollAttemptRef = useRef(0);
   const tributeTrackedRef = useRef(false);
@@ -484,6 +489,12 @@ export default function PublicCouplePage() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setShareUrl(window.location.href);
+    }
+  }, [token]);
+
 
 
   const premium = data?.plan === "PREMIUM";
@@ -506,7 +517,7 @@ export default function PublicCouplePage() {
 
   }, [data]);
 
-
+  const photoLayouts = usePhotoLayouts(photos);
 
   const finalYoutubeUrl = useMemo(() => {
 
@@ -666,29 +677,13 @@ export default function PublicCouplePage() {
 
   }
 
-  const handleShare = useCallback(async () => {
-    if (!data?.token || typeof window === "undefined") return;
-    const url = window.location.href;
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: data.names,
-          text: "Nossa homenagem no Love365",
-          url,
-        });
-      } else {
-        await navigator.clipboard.writeText(url);
-      }
-      trackEvent(FunnelEvents.TRIBUTE_SHARED, {
-        token: data.token,
-        plan: data.plan,
-      });
-    } catch {
-      /* cancelado pelo usuário */
-    }
-  }, [data?.token, data?.names, data?.plan]);
-
-
+  const trackShare = useCallback(() => {
+    if (!data?.token) return;
+    trackEvent(FunnelEvents.TRIBUTE_SHARED, {
+      token: data.token,
+      plan: data.plan,
+    });
+  }, [data?.token, data?.plan]);
 
   if (loading) return <TributePageSkeleton />;
 
@@ -798,21 +793,17 @@ export default function PublicCouplePage() {
 
 
 
-            <div className="relative h-[min(100svh,820px)] overflow-hidden bg-zinc-950 sm:aspect-[9/16] sm:h-auto sm:max-h-[85svh]">
+            <div className="relative h-[min(92svh,780px)] min-h-[480px] overflow-hidden bg-zinc-950 sm:aspect-[9/16] sm:h-auto sm:max-h-[85svh]">
 
               {currentPhoto ? (
 
-                // eslint-disable-next-line @next/next/no-img-element
-
-                <img
+                <TributePhoto
 
                   src={currentPhoto}
 
-                  alt=""
+                  layoutMode={photoLayouts[currentPhoto]}
 
-                  className="absolute inset-0 h-full w-full object-cover transition-opacity duration-700"
-
-                  draggable={false}
+                  alt={data.names}
 
                 />
 
@@ -888,7 +879,7 @@ export default function PublicCouplePage() {
 
                   </button>
 
-                  <ul className="absolute bottom-[11.5rem] left-0 right-0 z-20 flex justify-center gap-1.5">
+                  <ul className="absolute bottom-[15.5rem] left-0 right-0 z-20 flex justify-center gap-1.5 sm:bottom-[14.5rem]">
 
                     {photos.map((_, i) => (
 
@@ -944,18 +935,7 @@ export default function PublicCouplePage() {
 
 
 
-              <footer className="absolute inset-x-0 bottom-0 z-20 px-5 pb-10 sm:pb-8">
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void handleShare();
-                  }}
-                  className="mx-auto mb-4 flex rounded-full border border-white/20 bg-black/35 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-white/90 backdrop-blur-md transition hover:bg-black/50"
-                >
-                  Compartilhar
-                </button>
+              <footer className="absolute inset-x-0 bottom-0 z-20 px-5 pb-8 pt-2 sm:pb-7">
 
                 <ul className="mx-auto grid max-w-md list-none grid-cols-3 gap-2 p-0">
 
@@ -1020,6 +1000,19 @@ export default function PublicCouplePage() {
                   />
 
                 </ul>
+
+                {shareUrl && (
+                  <div
+                    className="mx-auto max-w-md"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <TributeShareActions
+                      names={data.names}
+                      shareUrl={shareUrl}
+                      onShared={trackShare}
+                    />
+                  </div>
+                )}
 
               </footer>
 

@@ -9,7 +9,7 @@ const copy = {
   },
   redirecting: {
     title: "Quase pronto",
-    subtitle: "Redirecionando para o pagamento seguro…",
+    subtitle: "Abrindo PIX seguro — sua página libera na hora após confirmar",
   },
 };
 

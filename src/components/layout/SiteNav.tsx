@@ -1,5 +1,7 @@
 import Link from "next/link";
+
 import { Logo } from "@/components/brand/Logo";
+import { PLAN_PRICING } from "@/lib/pricing";
 
 type SiteNavProps = {
   links?: { href: string; label: string }[];
@@ -18,8 +20,8 @@ const defaultLinks = [
 
 export function SiteNav({
   links = defaultLinks,
-  ctaHref = "/criar",
-  ctaLabel = "Criar nossa página",
+  ctaHref = "/criar?plan=premium",
+  ctaLabel = `Criar — ${PLAN_PRICING.PREMIUM.priceDisplay}`,
   backHref,
   backLabel = "Voltar",
 }: SiteNavProps) {
