@@ -142,7 +142,7 @@ export async function syncPagePaymentStatus(
   const started = Date.now();
   await connectToDatabase();
 
-  const page = await Page.findOne({ token }).lean<PageDocument>();
+  const page = (await Page.findOne({ token }).lean()) as PageDocument | null;
 
   if (!page) {
     throw new Error("Página não encontrada");

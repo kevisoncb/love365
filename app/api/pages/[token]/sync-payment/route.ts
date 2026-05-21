@@ -45,9 +45,9 @@ export async function POST(
 
     await connectToDatabase();
 
-    const page = await Page.findOne({
+    const page = (await Page.findOne({
       token: token.trim(),
-    }).lean<PageDocument>();
+    }).lean()) as PageDocument | null;
 
     if (!page) {
       return NextResponse.json(

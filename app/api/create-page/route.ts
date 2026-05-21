@@ -23,7 +23,7 @@ import {
   validateImageFile,
   validatePhotoBatch,
 } from "@/lib/upload-validation";
-import { trackServerEvent } from "@/lib/analytics";
+import { trackServerEvent } from "@/lib/analytics-server";
 import { AnalyticsEvents } from "@/lib/analytics-events";
 import { createLogger } from "@/lib/logger";
 import { captureServerErrorAsync } from "@/lib/error-tracking";

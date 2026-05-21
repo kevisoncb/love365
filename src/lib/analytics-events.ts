@@ -1,4 +1,4 @@
-/** Funil principal — nomes estáveis para GA / Meta / TikTok / dataLayer */
+/** Funil — constantes estáveis; tipos leves (evita unions gigantes no tsc) */
 export const FunnelEvents = {
   LANDING_VIEW: "landing_view",
   CREATE_STARTED: "create_started",
@@ -15,10 +15,10 @@ export const FunnelEvents = {
   UPSELL_VIEWED: "upsell_viewed",
 } as const;
 
-export type FunnelEventName =
-  (typeof FunnelEvents)[keyof typeof FunnelEvents];
+export type FunnelEventName = string;
+export type AnalyticsEventName = string;
 
-/** Aliases legados (compatibilidade com código existente) */
+/** Aliases legados */
 export const AnalyticsEvents = {
   ...FunnelEvents,
   VIEW_LANDING: FunnelEvents.LANDING_VIEW,
@@ -31,19 +31,12 @@ export const AnalyticsEvents = {
   UPSELL_VIEWED: FunnelEvents.UPSELL_VIEWED,
 } as const;
 
-export type AnalyticsEventName =
-  | FunnelEventName
-  | (typeof AnalyticsEvents)[keyof typeof AnalyticsEvents];
-
 export type AnalyticsPayload = Record<
   string,
   string | number | boolean | undefined
 >;
 
-/** Mapeia step do wizard → evento de funil */
-export function funnelStepEvent(
-  step: number
-): FunnelEventName | null {
+export function funnelStepEvent(step: number): string | null {
   switch (step) {
     case 1:
       return FunnelEvents.STEP_1_COMPLETED;

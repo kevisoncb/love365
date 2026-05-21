@@ -1,4 +1,4 @@
-import mongoose, { type Model } from "mongoose";
+import mongoose from "mongoose";
 
 import type { PageDocument } from "@/types/page";
 
@@ -59,7 +59,15 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   return cached.conn;
 }
 
-const PageSchema = new mongoose.Schema<PageDocument>(
+/** Modelo sem generics no Schema — reduz inferência pesada do tsc */
+function getModel(name: string, schema: mongoose.Schema) {
+  return (
+    mongoose.models[name] ??
+    mongoose.model(name, schema)
+  );
+}
+
+const PageSchema = new mongoose.Schema(
   {
     token: { type: String, required: true, unique: true },
     plan: { type: String, required: true },
@@ -79,6 +87,8 @@ const PageSchema = new mongoose.Schema<PageDocument>(
   { collection: "pages" }
 );
 
+export const Page = getModel("Page", PageSchema);
+
 const ProcessedWebhookEventSchema = new mongoose.Schema(
   {
     eventId: {
@@ -91,6 +101,17 @@ const ProcessedWebhookEventSchema = new mongoose.Schema(
     processedAt: { type: Date, default: Date.now },
   },
   { collection: "processed_webhook_events" }
+);
+
+export type ProcessedWebhookEventDoc = {
+  eventId: string;
+  token?: string;
+  processedAt?: Date;
+};
+
+export const ProcessedWebhookEvent = getModel(
+  "ProcessedWebhookEvent",
+  ProcessedWebhookEventSchema
 );
 
 const RateLimitBucketSchema = new mongoose.Schema(
@@ -107,36 +128,13 @@ RateLimitBucketSchema.index(
   { expireAfterSeconds: 86400 }
 );
 
-function getModel<T>(
-  name: string,
-  schema: mongoose.Schema
-): Model<T> {
-  return (
-    (mongoose.models[name] as Model<T> | undefined) ||
-    mongoose.model<T>(name, schema)
-  );
-}
-
-export const Page = getModel<PageDocument>("Page", PageSchema);
-
-export type ProcessedWebhookEventDoc = {
-  eventId: string;
-  token?: string;
-  processedAt?: Date;
-};
-
-export const ProcessedWebhookEvent = getModel<ProcessedWebhookEventDoc>(
-  "ProcessedWebhookEvent",
-  ProcessedWebhookEventSchema
-);
-
 export type RateLimitBucketDoc = {
   key: string;
   count: number;
   windowStart: Date;
 };
 
-export const RateLimitBucket = getModel<RateLimitBucketDoc>(
+export const RateLimitBucket = getModel(
   "RateLimitBucket",
   RateLimitBucketSchema
 );
@@ -152,7 +150,7 @@ export type OpsErrorLogDoc = {
   createdAt?: Date;
 };
 
-const OpsErrorLogSchema = new mongoose.Schema<OpsErrorLogDoc>(
+const OpsErrorLogSchema = new mongoose.Schema(
   {
     scope: { type: String, required: true, index: true },
     route: { type: String },
@@ -171,7 +169,9 @@ OpsErrorLogSchema.index(
   { expireAfterSeconds: 60 * 60 * 24 * 30 }
 );
 
-export const OpsErrorLog = getModel<OpsErrorLogDoc>(
+export const OpsErrorLog = getModel(
   "OpsErrorLog",
   OpsErrorLogSchema
 );
+
+export type { PageDocument };

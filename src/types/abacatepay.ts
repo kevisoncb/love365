@@ -41,8 +41,8 @@ export type AbacateCustomerCreateBody = {
   taxId: string;
 };
 
-export type AbacateApiEnvelope<T = JsonObject> = {
-  data?: T;
+export type AbacateApiEnvelope = {
+  data?: JsonObject;
   error?: string | null;
   message?: string;
 };

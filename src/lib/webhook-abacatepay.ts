@@ -6,7 +6,7 @@ import {
   Page,
   ProcessedWebhookEvent,
 } from "@/lib/db";
-import { trackServerEvent } from "@/lib/analytics";
+import { trackServerEvent } from "@/lib/analytics-server";
 import { AnalyticsEvents } from "@/lib/analytics-events";
 import { sendSuccessEmail } from "@/lib/mail-service";
 import {
@@ -288,7 +288,7 @@ export async function markPageAsPaid(
     setFields.abacateBillingId = billingId;
   }
 
-  const updated = await Page.findOneAndUpdate(
+  const updated = (await Page.findOneAndUpdate(
     {
       token,
       status: {
@@ -297,13 +297,13 @@ export async function markPageAsPaid(
     },
     { $set: setFields },
     { new: true }
-  ).lean<PageDocument>();
+  ).lean()) as PageDocument | null;
 
   if (updated) {
     return { page: updated, newlyPaid: true };
   }
 
-  const existing = await Page.findOne({ token }).lean<PageDocument>();
+  const existing = (await Page.findOne({ token }).lean()) as PageDocument | null;
 
   if (existing && isPaidPageStatus(existing.status)) {
     return { page: existing, newlyPaid: false };

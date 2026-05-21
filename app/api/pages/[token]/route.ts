@@ -24,7 +24,7 @@ export async function GET(
 
     await connectToDatabase();
 
-    const page = await Page.findOne({ token }).lean<PageDocument>();
+    const page = (await Page.findOne({ token }).lean()) as PageDocument | null;
 
     if (!page) {
       return NextResponse.json(

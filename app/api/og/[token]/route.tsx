@@ -17,7 +17,7 @@ export async function GET(
 
   try {
     await connectToDatabase();
-    const page = await Page.findOne({ token }).lean<PageDocument>();
+    const page = (await Page.findOne({ token }).lean()) as PageDocument | null;
     if (page?.names) {
       names = page.names.slice(0, 60);
       subtitle = "Reviva cada segundo juntos ♥";

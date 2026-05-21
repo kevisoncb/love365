@@ -1,4 +1,3 @@
-import { createLogger } from "@/lib/logger";
 import {
   AnalyticsEvents,
   FunnelEvents,
@@ -29,8 +28,6 @@ declare global {
   }
 }
 
-const analyticsLog = createLogger("ANALYTICS");
-
 function sanitizePayload(
   payload?: AnalyticsPayload
 ): Record<string, string | number | boolean> {
@@ -49,7 +46,7 @@ function sanitizePayload(
   return out;
 }
 
-const META_MAP: Partial<Record<string, string>> = {
+const META_MAP: Record<string, string> = {
   [FunnelEvents.LANDING_VIEW]: "ViewContent",
   [FunnelEvents.CREATE_STARTED]: "InitiateCheckout",
   [FunnelEvents.PAYMENT_REDIRECT]: "AddPaymentInfo",
@@ -57,7 +54,7 @@ const META_MAP: Partial<Record<string, string>> = {
   [FunnelEvents.TRIBUTE_OPENED]: "ViewContent",
 };
 
-const TIKTOK_MAP: Partial<Record<string, string>> = {
+const TIKTOK_MAP: Record<string, string> = {
   [FunnelEvents.LANDING_VIEW]: "ViewContent",
   [FunnelEvents.CREATE_STARTED]: "InitiateCheckout",
   [FunnelEvents.PAYMENT_REDIRECT]: "AddPaymentInfo",
@@ -65,7 +62,7 @@ const TIKTOK_MAP: Partial<Record<string, string>> = {
   [FunnelEvents.TRIBUTE_OPENED]: "ViewContent",
 };
 
-/** Rastreio no browser — GA4, Meta, TikTok + dataLayer */
+/** Rastreio no browser — sem imports de servidor (logger/db) */
 export function trackEvent(
   event: AnalyticsEventName,
   payload?: AnalyticsPayload
@@ -105,7 +102,7 @@ export function trackEvent(
   }
 
   if (process.env.NODE_ENV === "development") {
-    analyticsLog.info("client event", { meta: { event, ...params } });
+    console.log("[ANALYTICS]", event, params);
   }
 }
 
@@ -114,19 +111,6 @@ export function trackFunnelEvent(
   payload?: AnalyticsPayload
 ): void {
   trackEvent(event, payload);
-}
-
-/** Log estruturado no servidor (Vercel Logs) */
-export function trackServerEvent(
-  event: AnalyticsEventName,
-  payload?: AnalyticsPayload
-): void {
-  analyticsLog.info("server event", {
-    meta: {
-      event,
-      ...sanitizePayload(payload),
-    },
-  });
 }
 
 export {

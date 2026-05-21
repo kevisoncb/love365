@@ -24,10 +24,10 @@ export async function GET(req: Request) {
     await connectToDatabase();
     const started = Date.now();
 
-    const pages = await Page.find({})
+    const pages = (await Page.find({})
       .sort({ createdAt: -1 })
       .limit(500)
-      .lean<PageDocument[]>();
+      .lean()) as PageDocument[];
 
     const totalCreated = pages.length;
     const paidPages = pages.filter((p) =>
