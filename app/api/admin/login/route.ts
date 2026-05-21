@@ -6,6 +6,10 @@ import {
   verifyAdminPassword,
 } from "@/lib/admin-auth";
 import { createLogger } from "@/lib/logger";
+import {
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +18,16 @@ const log = createLogger("ADMIN");
 
 export async function POST(req: Request) {
   try {
+    const rate = await checkRateLimit(
+      req,
+      "admin-login",
+      8,
+      15 * 60 * 1000
+    );
+    if (!rate.ok) {
+      return rateLimitResponse(rate.retryAfterSec);
+    }
+
     if (!process.env.ADMIN_SECRET?.trim()) {
       return NextResponse.json(
         { error: "Painel não configurado" },

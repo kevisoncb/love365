@@ -1,0 +1,27 @@
+/* Escopo exclusivo do painel admin — não afeta a landing pública */
+
+.admin-root {
+  color-scheme: dark;
+  --admin-bg: #18181b;
+  --admin-bg-deep: #09090b;
+  --admin-surface: rgba(39, 39, 42, 0.55);
+  --admin-surface-solid: #27272a;
+  --admin-border: rgba(113, 113, 122, 0.45);
+  --admin-border-subtle: rgba(82, 82, 91, 0.35);
+  --admin-text: #fafafa;
+  --admin-text-secondary: #a1a1aa;
+  --admin-text-muted: #71717a;
+  color: var(--admin-text);
+  background-color: var(--admin-bg-deep);
+  background-image:
+    radial-gradient(
+      ellipse 80% 50% at 50% -20%,
+      rgba(113, 113, 122, 0.12),
+      transparent
+    ),
+    linear-gradient(180deg, #18181b 0%, #09090b 100%);
+}
+
+.admin-root ::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}

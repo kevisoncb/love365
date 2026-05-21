@@ -8,7 +8,7 @@ import {
 } from "@/lib/db";
 import { trackServerEvent } from "@/lib/analytics-server";
 import { AnalyticsEvents } from "@/lib/analytics-events";
-import { sendSuccessEmail } from "@/lib/mail-service";
+import { deliverPremiumTributeAfterPayment } from "@/lib/delivery/tribute-delivery";
 import {
   asJsonObject,
   getNestedString,
@@ -312,37 +312,6 @@ export async function markPageAsPaid(
   return { page: null, newlyPaid: false };
 }
 
-async function maybeSendPaidEmail(
-  page: PageDocument
-): Promise<void> {
-  if (page.emailSentAt) {
-    log.info("email skip", { token: page.token });
-    return;
-  }
-
-  const contact = page.contact;
-  if (
-    typeof contact !== "string" ||
-    !contact.includes("@")
-  ) {
-    return;
-  }
-
-  try {
-    await sendSuccessEmail(
-      contact,
-      page.names || "Love365",
-      page.token
-    );
-    await Page.updateOne(
-      { token: page.token },
-      { $set: { emailSentAt: new Date() } }
-    );
-    log.info("email sent", { token: page.token });
-  } catch (e) {
-    log.error("email failed", { token: page.token, error: e });
-  }
-}
 
 export async function handleAbacatePayWebhook(
   req: Request
@@ -497,7 +466,7 @@ export async function handleAbacatePayWebhook(
         token,
         billingId: billingId ?? undefined,
       });
-      await maybeSendPaidEmail(page);
+      await deliverPremiumTributeAfterPayment(page, true);
     }
 
     return {

@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  AdminButton,
+  AdminInput,
+  adminTheme,
+} from "@/components/admin/admin-ui";
+
 export default function AdminLoginPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -37,34 +43,40 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.03] p-8"
-      >
-        <h1 className="font-display text-2xl">Love365 Ops</h1>
-        <p className="mt-2 text-sm text-white/50">
-          Painel interno de operação
-        </p>
-        <input
+    <form
+      onSubmit={onSubmit}
+      className={`w-full max-w-sm ${adminTheme.card} p-8`}
+    >
+      <h1 className="font-display text-2xl font-medium text-zinc-50">
+        Love365 Ops
+      </h1>
+      <p className="mt-2 text-sm text-zinc-400">
+        Painel interno de operação
+      </p>
+      <div className="mt-6">
+        <label htmlFor="admin-password" className="sr-only">
+          Senha admin
+        </label>
+        <AdminInput
+          id="admin-password"
           type="password"
-          className="love-input mt-6 w-full"
           placeholder="Senha admin"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        {error && (
-          <p className="mt-3 text-sm text-red-400">{error}</p>
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="love-btn mt-6 w-full rounded-full bg-[var(--accent)] py-3 text-sm font-semibold disabled:opacity-60"
-        >
-          {loading ? "Entrando…" : "Entrar"}
-        </button>
-      </form>
-    </main>
+      </div>
+      {error && (
+        <p className="mt-3 text-sm text-rose-400">{error}</p>
+      )}
+      <AdminButton
+        type="submit"
+        variant="primary"
+        disabled={loading}
+        className="mt-6 w-full !py-2.5 !text-sm"
+      >
+        {loading ? "Entrando…" : "Entrar"}
+      </AdminButton>
+    </form>
   );
 }

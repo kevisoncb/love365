@@ -77,15 +77,29 @@ const PageSchema = new mongoose.Schema(
     message: { type: String },
     photoUrls: [{ type: String }],
     contact: { type: String },
+    buyerEmail: { type: String },
+    buyerWhatsapp: { type: String },
     status: { type: String, default: "PENDING" },
     abacateBillingId: { type: String },
     paidAt: { type: Date },
     emailSentAt: { type: Date },
+    emailDeliveryStatus: { type: String },
+    whatsappDeliveryStatus: { type: String },
+    emailDeliveredAt: { type: Date },
+    whatsappDeliveredAt: { type: Date },
+    deliveredAt: { type: Date },
+    deliveryError: { type: String },
     lastPaymentSyncAt: { type: Date },
     createdAt: { type: Date, default: Date.now },
   },
   { collection: "pages" }
 );
+
+PageSchema.index({ createdAt: -1 });
+PageSchema.index({ status: 1, createdAt: -1 });
+PageSchema.index({ plan: 1, createdAt: -1 });
+PageSchema.index({ token: 1 });
+PageSchema.index({ names: 1 });
 
 export const Page = getModel("Page", PageSchema);
 

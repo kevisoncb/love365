@@ -28,6 +28,7 @@ import { AnalyticsEvents } from "@/lib/analytics-events";
 import { createLogger } from "@/lib/logger";
 import { captureServerErrorAsync } from "@/lib/error-tracking";
 import { toApiClientError } from "@/lib/client-errors";
+import { normalizeWhatsApp } from "@/lib/delivery/buyer-contact";
 import { getPlanPriceCents } from "@/lib/pricing";
 
 import { PutObjectCommand } from "@aws-sdk/client-s3";
@@ -189,6 +190,11 @@ export async function POST(req: Request) {
     // SALVAR MONGO
     // =========================
 
+    const buyerEmail = email || null;
+    const buyerWhatsapp = whatsapp
+      ? normalizeWhatsApp(whatsapp)
+      : null;
+
     await Page.create({
       token,
       plan,
@@ -198,7 +204,11 @@ export async function POST(req: Request) {
       youtubeUrl: musicField,
       photoUrls,
       status: "PENDING",
-      contact: email || whatsapp,
+      contact: buyerEmail || buyerWhatsapp || undefined,
+      buyerEmail: buyerEmail || undefined,
+      buyerWhatsapp: buyerWhatsapp || undefined,
+      emailDeliveryStatus: buyerEmail ? "pending" : "skipped",
+      whatsappDeliveryStatus: buyerWhatsapp ? "pending" : "skipped",
     });
 
     log.info("page saved", { token, plan, status: "PENDING" });

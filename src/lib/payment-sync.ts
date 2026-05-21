@@ -15,6 +15,7 @@ import {
   isAbacatePaymentApproved,
   isPaidPageStatus,
 } from "@/lib/page-status";
+import { deliverPremiumTributeAfterPayment } from "@/lib/delivery/tribute-delivery";
 import { markPageAsPaid } from "@/lib/webhook-abacatepay";
 import type { PageDocument } from "@/types/page";
 import { fetchWithTimeout } from "@/lib/fetch-safe";
@@ -183,10 +184,14 @@ export async function syncPagePaymentStatus(
     };
   }
 
-  const { newlyPaid } = await markPageAsPaid(
+  const { page: paidPage, newlyPaid } = await markPageAsPaid(
     token,
     remoteBillingId
   );
+
+  if (newlyPaid && paidPage) {
+    await deliverPremiumTributeAfterPayment(paidPage, true);
+  }
 
   syncLog.done("sync paid", {
     token,
