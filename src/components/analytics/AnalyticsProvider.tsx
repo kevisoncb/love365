@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Script from "next/script";
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
@@ -9,7 +10,7 @@ const TIKTOK_PIXEL_ID = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID;
 export function AnalyticsProvider({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <>

@@ -13,6 +13,7 @@ import { HeartsOverlay } from "@/components/tribute/HeartsOverlay";
 import { PendingPaymentScreen } from "@/components/tribute/PendingPaymentScreen";
 
 import { TributePageSkeleton } from "@/components/ui/Skeleton";
+import { LoadingScreen } from "@/components/ui/LoadingScreen";
 
 import { pad2, diffParts } from "@/lib/date-utils";
 

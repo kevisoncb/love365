@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /** Mongoose/AWS não entram no bundle server — menos pressão no build */
   serverExternalPackages: [
     "mongoose",
     "mongodb",
@@ -9,9 +8,6 @@ const nextConfig: NextConfig = {
   ],
   typescript: {
     tsconfigPath: "./tsconfig.build.json",
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   },
 };
 

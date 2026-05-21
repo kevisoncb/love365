@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Suspense } from "react";
 
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 export default function CreateLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <Suspense

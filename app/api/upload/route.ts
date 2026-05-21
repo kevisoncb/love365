@@ -65,7 +65,14 @@ export async function POST(req: Request) {
 
     await s3Client.send(command);
 
-    const publicUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${fileName}`;
+    const r2Base = (
+      process.env.R2_PUBLIC_URL ||
+      process.env.NEXT_PUBLIC_R2_PUBLIC_URL ||
+      ""
+    ).replace(/\/$/, "");
+    const publicUrl = r2Base
+      ? `${r2Base}/${fileName}`
+      : fileName;
 
     log.done("upload ok", { status: 200 });
     return NextResponse.json({ url: publicUrl });

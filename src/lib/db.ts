@@ -159,7 +159,7 @@ const OpsErrorLogSchema = new mongoose.Schema(
     message: { type: String, required: true },
     stack: { type: String },
     meta: { type: mongoose.Schema.Types.Mixed },
-    createdAt: { type: Date, default: Date.now, index: true },
+    createdAt: { type: Date, default: Date.now },
   },
   { collection: "ops_error_logs" }
 );
